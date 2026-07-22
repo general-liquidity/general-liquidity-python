@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package
+        run: pip install -e .
+      - name: Import smoke test
+        run: python -c "import general_liquidity; from general_liquidity import ApiClient, Configuration, MoneyApi, GovernanceApi, IdentityApi, CommerceApi; print('import ok')"
+      - name: Compile all modules
+        run: python -m compileall general_liquidity
