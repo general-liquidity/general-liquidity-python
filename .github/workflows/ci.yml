@@ -23,4 +23,4 @@ jobs:
       - name: Import smoke test
         run: python -c "import general_liquidity; from general_liquidity import ApiClient, Configuration, MoneyApi, GovernanceApi, IdentityApi, CommerceApi; print('import ok')"
       - name: Compile all modules
-        run: python -m compileall general_liquidity
+        run: python -m compileall src/general_liquidity

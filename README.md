@@ -55,6 +55,18 @@ Model names (`Intent`, `Receipt`, `Mandate`, `Order`, `QuoteRequest`, `Counterpa
 
 This generated client covers transport and models only. Intent envelope signing is client-side and is not included here. You are responsible for constructing and signing the `Intent` before passing it to `pay` or `buy`. Only the hand-written TypeScript SDK carries the built-in operator signer today.
 
+## Layout
+
+The package uses the Python src-layout: the importable package lives at `src/general_liquidity/`, and the import name stays `general_liquidity`. `pip install -e .` picks it up via `package_dir={"": "src"}` in `setup.py`.
+
 ## Generation
 
-This SDK is generated from the `general-liquidity-openapi` spec and is regenerated whenever the spec changes. Do not hand-edit the generated modules; change the spec and regenerate.
+This SDK is generated from the `general-liquidity-openapi` spec with openapi-generator (python generator) and is regenerated whenever the spec changes. Do not hand-edit the generated modules; change the spec and regenerate.
+
+openapi-generator emits the package at the repo root as `general_liquidity/`. After regenerating, move it under `src/` so the src-layout is preserved:
+
+```bash
+git mv general_liquidity src/general_liquidity
+```
+
+(This mirrors the Go SDK, which relocates its generated sources into `client/` after each run.)
