@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: "General Liquidity: The Machine Economy API"
-  version: "2026-07-24"
+  version: "2026-07-25"
   summary: One governed, unified surface over payment, commerce, identity, and provenance.
   description: |
     General Liquidity (GL) is one governed surface over payment, commerce, identity,
@@ -40,6 +40,14 @@ tags:
       Manage outbound webhook endpoints. Events are derived from the signed audit chain and
       signed with a per-endpoint `whsec_` secret (the `GL-Signature` header). Management is
       OPERATOR-privileged: gated by the `GL-Operator` credential, never the agent bearer token.
+  - name: memory
+    description: |
+      The memory capability group: bi-temporal, signed, no-lookahead agent memory. `remember`
+      writes a record, `recall` reads a point-in-time snapshot, `assemble` budgets it into a
+      signed context, and `verify` checks a signed artifact offline. Reads/writes are AGENT
+      authority scoped by a `MemoryMandate`; `forget` (cascading erasure) is OPERATOR-privileged,
+      gated by the `GL-Operator` credential exactly like the kill switch. Optional + default-off:
+      absent a configured memory engine, every `/memory/*` route is a 404.
   - name: operator
     description: |
       Human operator controls over the settle path (approve · refund · kill switch ·
@@ -474,6 +482,165 @@ paths:
           description: Deleted.
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
+
+  /memory/remember:
+    post:
+      operationId: memoryRemember
+      tags: [memory]
+      summary: Write one bi-temporal memory record under a mandate.
+      description: |
+        Write a record valid from `validFrom` (open-ended when `validTo` is null). The engine
+        gates the write against the `MemoryMandate` (needs `canWrite`) and its own preconditions:
+        `allow` returns the signed `MemoryRecord`; a parked write is a `202 memory.pending`; a
+        refusal is `memory.denied` (engine) or `memory.forbidden` (mandate). No-lookahead: a
+        record never reveals a future edit. Default-off: absent a memory engine, this is a 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RememberRequest"
+      responses:
+        "200":
+          description: The signed, recorded bi-temporal record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryRecord"
+        "202":
+          description: The write was accepted and parked pending operator confirmation.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /memory/recall:
+    post:
+      operationId: memoryRecall
+      tags: [memory]
+      summary: Read a sealed point-in-time snapshot.
+      description: |
+        Read the records valid at `validAt` as known at `txAt`, under one seal, cursor-paginated
+        for large snapshots. Needs `canRead`; a recall reaching before the mandate's `asOfFloor`
+        is a `memory.forbidden`. Default-off: absent a memory engine, this is a 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecallRequest"
+      responses:
+        "200":
+          description: A page of snapshot records carrying the full-snapshot seal + coordinates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotPage"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /memory/assemble:
+    post:
+      operationId: memoryAssemble
+      tags: [memory]
+      summary: Assemble a budgeted, signed context from a snapshot.
+      description: |
+        Take a supplied `snapshot` (or `recall` params to produce one) and return a signed
+        `AssembledContext` within `budget.maxTokens`. Needs `canRead`. Abstention (the engine
+        declining to fill the budget) is a valid `200`, not an error. Default-off: 404 absent an engine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssembleRequest"
+      responses:
+        "200":
+          description: The signed, ordered context (possibly an abstention).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssembledContext"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /memory/verify:
+    post:
+      operationId: memoryVerify
+      tags: [memory]
+      summary: Verify a signed memory artifact offline.
+      description: |
+        Offline verification of a signed record · snapshot · context · erasure proof. FREE and
+        UNMETERED: it reaches no store, mutates nothing, and needs no mandate. Default-off: 404
+        absent a memory engine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifact]
+              properties:
+                artifact:
+                  description: A signed memory artifact to verify.
+      responses:
+        "200":
+          description: The verification verdict.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid]
+                properties:
+                  valid: { type: boolean }
+                  reason: { type: string }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /memory/forget:
+    post:
+      operationId: memoryForget
+      tags: [memory]
+      summary: Cascading erasure of a record and its dependents. (Operator)
+      description: |
+        DESTRUCTIVE and OPERATOR-privileged: gated by the `GL-Operator` credential on its own
+        disjoint domain (the same channel the kill switch + webhook CRUD use), never the agent
+        bearer token, so an agent credential grants nothing here. The mandate's `canErase` is
+        checked in ADDITION. Returns a signed `ErasureProof` and emits `memory.erased`.
+        Default-off: 404 absent a memory engine.
+      security:
+        - operatorAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgetRequest"
+      responses:
+        "200":
+          description: The signed cascading-erasure proof.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErasureProof"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
 
   /buy:
     post:
@@ -1134,7 +1301,15 @@ components:
     WebhookEventType:
       type: string
       description: The outbound event types a subscription filters on.
-      enum: [payment.settled, intent.denied, approval.pending, audit.appended]
+      enum:
+        - payment.settled
+        - intent.denied
+        - approval.pending
+        - memory.recorded
+        - memory.tainted
+        - memory.erased
+        - memory.consolidated
+        - audit.appended
 
     WebhookEndpoint:
       type: object
@@ -1183,7 +1358,180 @@ components:
             The source entry's payload plus the chain coordinates (`audit_seq`, `audit_hash`,
             `audit_type`) that let a consumer re-verify the underlying signed audit entry. For
             `payment.settled` a Receipt-shaped record; for `intent.denied` / `approval.pending`
-            the gate Decision; for `audit.appended` the whole AuditEvent.
+            the gate Decision; for `memory.*` the memory event payload (record id, source, and
+            for erasure the erased ids + actor); for `audit.appended` the whole AuditEvent.
+
+    Seal:
+      type: object
+      additionalProperties: false
+      description: A sealed hash+signature pair carried by every signed memory artifact.
+      required: [hash, signature]
+      properties:
+        hash: { type: string }
+        signature: { type: string }
+
+    MemoryMandate:
+      type: object
+      additionalProperties: false
+      description: |
+        Scopes an agent's memory authority — the memory analog of the spend mandate. `asOfFloor`
+        bounds how far back a recall may reach (a recall `validAt` earlier than it is refused).
+      required: [namespace, canRead, canWrite, canErase]
+      properties:
+        namespace: { type: string }
+        canRead: { type: boolean }
+        canWrite: { type: boolean }
+        canErase: { type: boolean }
+        asOfFloor: { type: string, format: date-time }
+
+    MemoryRecord:
+      type: object
+      additionalProperties: false
+      description: |
+        One bi-temporal memory record. `validFrom`/`validTo` are the VALID-time window (the world
+        the fact is about); `recordedAt`/`invalidatedAt` are the TRANSACTION-time window (when the
+        store learned it). No-lookahead: a snapshot at a past instant never reveals a later edit.
+      required: [id, body, validFrom, validTo, recordedAt, invalidatedAt, edges, taint, source]
+      properties:
+        id: { type: string }
+        body: { description: The arbitrary record payload. }
+        validFrom: { type: string, format: date-time }
+        validTo: { type: [string, "null"], format: date-time }
+        recordedAt: { type: string, format: date-time }
+        invalidatedAt: { type: [string, "null"], format: date-time }
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [relation, to]
+            properties:
+              relation: { type: string }
+              to: { type: string }
+        taint: { type: boolean }
+        source: { type: string }
+
+    Snapshot:
+      type: object
+      additionalProperties: false
+      description: A point-in-time snapshot — the records valid at `validAt`/`txAt`, under one seal.
+      required: [records, validAt, txAt, seal]
+      properties:
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/MemoryRecord" }
+        validAt: { type: string, format: date-time }
+        txAt: { type: string, format: date-time }
+        seal: { $ref: "#/components/schemas/Seal" }
+
+    SnapshotPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          required: [validAt, txAt, seal]
+          description: A cursor page over a snapshot's records; the seal covers the COMPLETE snapshot.
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/MemoryRecord" }
+            validAt: { type: string, format: date-time }
+            txAt: { type: string, format: date-time }
+            seal: { $ref: "#/components/schemas/Seal" }
+
+    AssembledContext:
+      type: object
+      additionalProperties: false
+      description: |
+        A budgeted, ordered context assembled from a snapshot, under one seal. Abstention
+        (`abstained: true`) is a valid result — the engine declining to fill the budget.
+      required: [records, order, budget, abstained, seal]
+      properties:
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/MemoryRecord" }
+        order:
+          type: array
+          items: { type: string }
+        budget:
+          type: object
+          required: [maxTokens]
+          properties:
+            maxTokens: { type: integer }
+        abstained: { type: boolean }
+        abstainReason: { type: string }
+        seal: { $ref: "#/components/schemas/Seal" }
+
+    ErasureProof:
+      type: object
+      additionalProperties: false
+      description: The signed cascading-erasure proof `forget` returns — the erased ids under a seal.
+      required: [erased, proof]
+      properties:
+        erased:
+          type: array
+          items: { type: string }
+        proof: { $ref: "#/components/schemas/Seal" }
+
+    RememberRequest:
+      type: object
+      additionalProperties: false
+      description: A gated memory write. The mandate needs `canWrite`.
+      required: [mandate, validFrom, validTo, source]
+      properties:
+        mandate: { $ref: "#/components/schemas/MemoryMandate" }
+        body: { description: The arbitrary record payload. }
+        validFrom: { type: string, format: date-time }
+        validTo: { type: [string, "null"], format: date-time }
+        edges:
+          type: array
+          items:
+            type: object
+            required: [relation, to]
+            properties:
+              relation: { type: string }
+              to: { type: string }
+        source: { type: string }
+
+    RecallRequest:
+      type: object
+      additionalProperties: false
+      description: A point-in-time read. The mandate needs `canRead`.
+      required: [mandate, validAt, txAt]
+      properties:
+        mandate: { $ref: "#/components/schemas/MemoryMandate" }
+        validAt: { type: string, format: date-time }
+        txAt: { type: string, format: date-time }
+        namespace: { type: string }
+
+    AssembleRequest:
+      type: object
+      additionalProperties: false
+      description: Budgeted context assembly over a supplied snapshot OR recall params.
+      required: [mandate, budget]
+      properties:
+        mandate: { $ref: "#/components/schemas/MemoryMandate" }
+        snapshot: { $ref: "#/components/schemas/Snapshot" }
+        recall:
+          type: object
+          required: [validAt, txAt]
+          properties:
+            validAt: { type: string, format: date-time }
+            txAt: { type: string, format: date-time }
+        budget:
+          type: object
+          required: [maxTokens]
+          properties:
+            maxTokens: { type: integer }
+        namespace: { type: string }
+
+    ForgetRequest:
+      type: object
+      additionalProperties: false
+      description: Cascading erasure of a root and its dependents. Operator-privileged; needs `canErase`.
+      required: [mandate, rootId]
+      properties:
+        mandate: { $ref: "#/components/schemas/MemoryMandate" }
+        rootId: { type: string }
 
     Order:
       type: object
@@ -1263,7 +1611,11 @@ components:
           format: uri
         code:
           type: string
-          description: Stable machine code an agent branches on, e.g. "over_mandate" | "rate_limited".
+          description: |
+            Stable machine code an agent branches on, e.g. "over_mandate" | "rate_limited". The
+            memory group adds: "memory.denied" (403, engine refused a gated write), "memory.forbidden"
+            (403, mandate scope/capability refusal), and "memory.pending" (202, write parked for
+            operator confirmation).
         retry_after:
           type: integer
           description: Valid-retry hint in seconds; absent when the call must not be retried as-is.

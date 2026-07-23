@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **id** | **str** | Deterministic event id, &#x60;evt_&lt;audit_hash&gt;&#x60;. | 
 **type** | [**WebhookEventType**](WebhookEventType.md) |  | 
 **created_at** | **datetime** |  | 
-**data** | **Dict[str, object]** | The source entry&#39;s payload plus the chain coordinates (&#x60;audit_seq&#x60;, &#x60;audit_hash&#x60;, &#x60;audit_type&#x60;) that let a consumer re-verify the underlying signed audit entry. For &#x60;payment.settled&#x60; a Receipt-shaped record; for &#x60;intent.denied&#x60; / &#x60;approval.pending&#x60; the gate Decision; for &#x60;audit.appended&#x60; the whole AuditEvent.  | 
+**data** | **Dict[str, object]** | The source entry&#39;s payload plus the chain coordinates (&#x60;audit_seq&#x60;, &#x60;audit_hash&#x60;, &#x60;audit_type&#x60;) that let a consumer re-verify the underlying signed audit entry. For &#x60;payment.settled&#x60; a Receipt-shaped record; for &#x60;intent.denied&#x60; / &#x60;approval.pending&#x60; the gate Decision; for &#x60;memory.*&#x60; the memory event payload (record id, source, and for erasure the erased ids + actor); for &#x60;audit.appended&#x60; the whole AuditEvent.  | 
 
 ## Example
 

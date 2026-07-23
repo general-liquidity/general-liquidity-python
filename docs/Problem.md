@@ -11,7 +11,7 @@ Name | Type | Description | Notes
 **status** | **int** | HTTP status code. | 
 **detail** | **str** | Human-readable explanation specific to this occurrence. | [optional] 
 **instance** | **str** |  | [optional] 
-**code** | **str** | Stable machine code an agent branches on, e.g. \&quot;over_mandate\&quot; | \&quot;rate_limited\&quot;. | [optional] 
+**code** | **str** | Stable machine code an agent branches on, e.g. \&quot;over_mandate\&quot; | \&quot;rate_limited\&quot;. The memory group adds: \&quot;memory.denied\&quot; (403, engine refused a gated write), \&quot;memory.forbidden\&quot; (403, mandate scope/capability refusal), and \&quot;memory.pending\&quot; (202, write parked for operator confirmation).  | [optional] 
 **retry_after** | **int** | Valid-retry hint in seconds; absent when the call must not be retried as-is. | [optional] 
 
 ## Example
