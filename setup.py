@@ -31,6 +31,8 @@ REQUIRES = [
     "python-dateutil >= 2.8.2",
     "pydantic >= 2",
     "typing-extensions >= 4.7.1",
+    "cryptography >= 42",
+    "rfc8785 >= 0.1.2",
 ]
 
 setup(
