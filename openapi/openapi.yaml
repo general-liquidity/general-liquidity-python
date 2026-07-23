@@ -1,0 +1,1357 @@
+openapi: 3.1.0
+info:
+  title: "General Liquidity: The Machine Economy API"
+  version: "2026-07-24"
+  summary: One governed, unified surface over payment, commerce, identity, and provenance.
+  description: |
+    General Liquidity (GL) is one governed surface over payment, commerce, identity,
+    and provenance for the machine economy. A caller submits a signed `Intent`, a
+    deny-first gate decides, and only the server holds the settle primitive, so the
+    caller never does. The wire convention is `snake_case`.
+  contact:
+    name: General Liquidity
+    url: https://generalliquidity.com
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://api.generalliquidity.com
+    description: Hosted gateway (holds the settle primitive).
+  - url: https://sandbox.api.generalliquidity.com
+    description: Sandbox / testnet gateway.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: identity
+    description: Resolve, verify, and disclose counterparty identity + provenance.
+  - name: money
+    description: Submit a signed Intent to the sovereign gate for settlement.
+  - name: commerce
+    description: Merchant checkout over ACP / UCP. Beta.
+  - name: governance
+    description: |
+      Read the signed, hash-linked audit trail — the `/audit` list + stream, the async job
+      resource (`/intents/{id}`), and metered usage.
+  - name: webhooks
+    description: |
+      Manage outbound webhook endpoints. Events are derived from the signed audit chain and
+      signed with a per-endpoint `whsec_` secret (the `GL-Signature` header). Management is
+      OPERATOR-privileged: gated by the `GL-Operator` credential, never the agent bearer token.
+  - name: operator
+    description: |
+      Human operator controls over the settle path (approve · refund · kill switch ·
+      circuit breaker). A SEPARATE authorization domain from the agent's bearer token:
+      these routes are gated only by the `GL-Operator` credential, a detached ed25519
+      signature the hosted server can verify but cannot mint, and the agent's
+      `Authorization` is never consulted here. An agent credential therefore cannot
+      perform an operator action.
+
+paths:
+  /resolve:
+    post:
+      operationId: resolve
+      tags: [identity]
+      summary: Normalize any counterparty reference into one identity.
+      description: |
+        Normalize a counterparty reference (A2A card · signed disclosure · CAIP account)
+        into one identity, its accepted rails, and trust signals. Read-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ref]
+              properties:
+                ref:
+                  type: string
+                  description: A2A card URL, signed disclosure id, or CAIP-10 account.
+      responses:
+        "200":
+          description: The normalized counterparty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Counterparty"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /pay:
+    post:
+      operationId: pay
+      tags: [money]
+      summary: Submit a signed Intent; the gate decides and settles.
+      description: |
+        Submit a signed `Intent`. The sovereign gate evaluates mandate · caps · risk ·
+        velocity · deny-list over the six irreducible `Terms`. On `allow` it settles on
+        the routed rail and returns a durable `Receipt`. On `confirm` it returns a
+        human-approval requirement (RFC 7807). On `deny` it refuses. The caller never
+        holds a settle primitive.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Intent"
+      responses:
+        "200":
+          description: Settled. A durable, machine-parseable Receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+        "202":
+          description: Gate returned `confirm` — human approval required before settlement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403":
+          description: Gate returned `deny`. The Intent falls outside mandate/policy.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /verify:
+    post:
+      operationId: verify
+      tags: [identity]
+      summary: Check a counterparty's signed disclosure against policy.
+      description: |
+        Check a counterparty's signed `Disclosure` against policy — identity, provenance,
+        and enforcement proof — returning a `Decision`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Disclosure"
+      responses:
+        "200":
+          description: The gate's decision on the disclosure.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /disclose:
+    post:
+      operationId: disclose
+      tags: [identity]
+      summary: Produce GL's own signed disclosure.
+      description: |
+        Produce GL's own signed `Disclosure`: what this agent is and what it is
+        authorized to do. Read-only with respect to value.
+      responses:
+        "200":
+          description: The signed self-description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disclosure"
+        "401": { $ref: "#/components/responses/Problem" }
+
+  /audit:
+    get:
+      operationId: audit
+      tags: [governance]
+      summary: Read the signed, hash-linked audit trail (cursor-paginated).
+      description: |
+        Returns a `Page` envelope of signed audit events, keyed on the audit `seq`. Pass
+        `cursor` (from a prior page's `next_cursor`) to resume; a `limit`-only call with no
+        cursor returns the first page, so the legacy bare-`limit` request keeps working. A
+        malformed or stale cursor is a `400 intent.malformed`.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of signed audit events.
+          headers:
+            X-RateLimit-Limit: { $ref: "#/components/headers/RateLimitLimit" }
+            X-RateLimit-Remaining: { $ref: "#/components/headers/RateLimitRemaining" }
+            X-RateLimit-Reset: { $ref: "#/components/headers/RateLimitReset" }
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AuditEvent"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /audit/stream:
+    get:
+      operationId: auditStream
+      tags: [governance]
+      summary: Subscribe to the signed audit chain as Server-Sent Events.
+      description: |
+        A read/observe surface over the SAME signed audit chain `/audit` pages. Returns a
+        `text/event-stream`: each appended entry is one SSE frame (`id:` = the audit `seq`,
+        `event:` = the entry type, `data:` = the entry). A reconnecting client sends
+        `Last-Event-ID` (the last `seq` it saw) to replay missed entries before joining the
+        live fan-out. Never moves money and never writes the chain. Default-off: absent an
+        event-stream backing, this route is a 404.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The last audit `seq` the client received, for gap-free resume.
+      responses:
+        "200":
+          description: An open SSE stream of audit entries.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE frames; each `data:` line is an AuditEvent JSON object.
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /intents/{id}:
+    get:
+      operationId: getIntent
+      tags: [governance]
+      summary: Read the async job resource for one intent.
+      description: |
+        A first-class read projection over an intent's confirm-park-approve lifecycle: a
+        stable id, a terminal-state enum, the settlement receipt on a settled job, the RFC
+        9457 problem on a denied/failed job, and the resume material (challenge + mandate)
+        on a still-pending job. Derived from the persisted intent + the signed audit trail.
+        Default-off: absent the job wiring, this route is a 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The intent's idempotency key — the stable resource id.
+      responses:
+        "200":
+          description: The job resource.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /intents/{id}/events:
+    get:
+      operationId: getIntentEvents
+      tags: [governance]
+      summary: List one intent's audit events (cursor-paginated).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of the intent's signed audit events.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AuditEvent"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /usage:
+    get:
+      operationId: getUsage
+      tags: [governance]
+      summary: Read metered call counts for the authenticated principal.
+      description: |
+        Call counting only — no prices, no billing. Aggregates the authenticated principal's
+        calls over a half-open window `[since, until)`, optionally filtered to calls carrying
+        EVERY listed tag (AND semantics). Tags are UNSIGNED per-request attribution supplied
+        via the `X-GL-Tags` header; they never touch the Intent or the gate decision.
+        Default-off: absent a usage store, this route is a 404 and nothing is recorded.
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+          description: ISO-8601 inclusive lower bound.
+        - name: until
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+          description: ISO-8601 exclusive upper bound.
+        - name: tags
+          in: query
+          required: false
+          explode: true
+          schema:
+            type: array
+            items: { type: string }
+          description: Repeatable; count only calls carrying every listed tag.
+      responses:
+        "200":
+          description: The usage summary.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageSummary"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /webhooks/endpoints:
+    post:
+      operationId: createWebhookEndpoint
+      tags: [webhooks]
+      summary: Register a webhook endpoint. (Operator authority)
+      security:
+        - operatorAuth: []
+      description: |
+        Registers an endpoint that receives signed events derived from the audit chain. An
+        endpoint that receives settlement/audit events is OPERATOR-privileged, so this route
+        is gated by the `GL-Operator` credential channel, not the agent bearer token. The
+        `whsec_` signing secret is returned ONCE, on this call; the reads never re-expose it.
+        Default-off: absent a webhook store, this route is a 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url, events]
+              properties:
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  minItems: 1
+                  items: { $ref: "#/components/schemas/WebhookEventType" }
+                active: { type: boolean, default: true }
+      responses:
+        "201":
+          description: The created endpoint, including its one-time secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpointCreated"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    get:
+      operationId: listWebhookEndpoints
+      tags: [webhooks]
+      summary: List webhook endpoints. (Operator authority)
+      security:
+        - operatorAuth: []
+      responses:
+        "200":
+          description: The registered endpoints (secrets redacted).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /webhooks/endpoints/{id}:
+    get:
+      operationId: getWebhookEndpoint
+      tags: [webhooks]
+      summary: Read one webhook endpoint. (Operator authority)
+      security:
+        - operatorAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The endpoint (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: updateWebhookEndpoint
+      tags: [webhooks]
+      summary: Update one webhook endpoint. (Operator authority)
+      security:
+        - operatorAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  items: { $ref: "#/components/schemas/WebhookEventType" }
+                active: { type: boolean }
+      responses:
+        "200":
+          description: The updated endpoint (secret redacted).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: deleteWebhookEndpoint
+      tags: [webhooks]
+      summary: Delete one webhook endpoint. (Operator authority)
+      security:
+        - operatorAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted.
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  /buy:
+    post:
+      operationId: buy
+      tags: [commerce]
+      summary: Drive a merchant checkout to a completed Order. (Beta)
+      x-beta: true
+      description: |
+        Beta. Drive a merchant checkout (ACP · UCP) to a completed `Order`; calls `pay`
+        for the authorize/settle beats. Documented but not yet stable.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Intent"
+      responses:
+        "200":
+          description: The completed order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /quote:
+    post:
+      operationId: quote
+      tags: [commerce]
+      summary: Get a server-authoritative priced cart before buy. (Beta)
+      x-beta: true
+      description: |
+        Beta. Get a server-authoritative priced `Cart` (tax, inventory, fulfillment
+        computed by the merchant) before committing to `buy`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [what]
+              properties:
+                what:
+                  type: string
+                  description: Merchant reference / product query.
+                constraints:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: A server-authoritative priced cart.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /operator/approve:
+    post:
+      operationId: operatorApprove
+      tags: [operator]
+      summary: Release a parked (confirm-tier) intent to settlement.
+      security:
+        - operatorAuth: []
+      description: |
+        The network half of the parked-intent flow. A caller who received an
+        `approval.pending` problem holds exactly the fields this route needs — the
+        intent id, the matched mandate id, and the challenge that binds an approval to
+        that intent. The kernel's own preconditions are preserved: a hard deny cannot
+        be approved away, and a high-risk, irreversible or large intent that arrives
+        without an explicit `acknowledged` comes back as another `approval.pending`
+        (the settler's challenge-response), never a settlement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorApprove"
+      responses:
+        "200":
+          description: Approved and settled. The durable Receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+        "202":
+          description: The settler withheld release pending explicit acknowledgement.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /operator/refund:
+    post:
+      operationId: operatorRefund
+      tags: [operator]
+      summary: Reverse a settled payment on a reversible rail.
+      security:
+        - operatorAuth: []
+      description: |
+        Reverse a settled payment, resolving to the PSP that issued the receipt.
+        Refusing an irreversible refund is a safety property, not a limitation: a
+        settlement on an irreversible rail comes back `operator.refused`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorRefund"
+      responses:
+        "200":
+          description: The refund result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundResult"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /operator/kill-switch:
+    post:
+      operationId: operatorKillSwitch
+      tags: [operator]
+      summary: Freeze or unfreeze the settle path.
+      security:
+        - operatorAuth: []
+      description: |
+        Engage or disengage the kill switch. While engaged, no payment settles — the
+        agent cannot write this flag, so it is a genuine operator brake for an
+        incident. The two directions are signed separately, so an "unfreeze"
+        credential cannot be replayed as a freeze.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorKillSwitch"
+      responses:
+        "200":
+          description: The live halt state after the operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorStateView"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /operator/circuit-breaker/reset:
+    post:
+      operationId: operatorResetCircuitBreaker
+      tags: [operator]
+      summary: Clear a tripped circuit breaker.
+      security:
+        - operatorAuth: []
+      description: |
+        Reset the circuit breaker after it trips on consecutive blocks or failures,
+        re-enabling auto-execution. An operator-only control.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorRationale"
+      responses:
+        "200":
+          description: The live halt state after the reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorStateView"
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bootstrap-only static bearer token. The **target** auth per BUILD-PLAN §8 is
+        OAuth 2.1 + PKCE with DPoP (RFC 9449) sender-constrained, short-lived scoped
+        tokens; static keys are demoted to bootstrap. Modeled as a pluggable hook.
+    operatorAuth:
+      type: apiKey
+      in: header
+      name: GL-Operator
+      description: |
+        Operator authority for `/operator/*`, a SEPARATE authorization domain from
+        `bearerAuth`. The header carries a detached ed25519 signature over the canonical
+        request (operation · method · URL · timestamp · single-use nonce · body digest).
+        The hosted server holds only the operator PUBLIC keys, so it cannot mint this
+        credential even for itself, and the agent's bearer token grants nothing on these
+        routes. That structural separation is the product's core control: an agent
+        credential can never perform an operator action.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated, server-enforced idempotency key. Required on all mutating
+        operations (`pay`, `buy`) — on a payment path this is a correctness guarantee
+        against double-spend, not a convenience.
+      schema:
+        type: string
+        minLength: 1
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque token from a prior page's `next_cursor`. Absent means "from the start".
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size, clamped to [1, 100]; defaults to 20.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  headers:
+    RateLimitLimit:
+      description: The request ceiling for the current fixed window (RFC draft `X-RateLimit-*`).
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Requests left in the current window after this one (0 on a 429).
+      schema: { type: integer }
+    RateLimitReset:
+      description: Unix SECONDS of the current window's edge.
+      schema: { type: integer }
+    RequestId:
+      description: |
+        Correlation id, on EVERY response. Echoed from a well-formed inbound `X-Request-Id` /
+        `Request-Id`, otherwise minted fresh, so a client can quote it in a support ticket and
+        an operator can grep the audit trail for exactly that call.
+      schema: { type: string }
+    GLSignature:
+      description: |
+        `GL-Signature: t=<unix_seconds>,v1=<hex_hmac>` on every webhook delivery. `v1` is the
+        hex HMAC-SHA256 of the ASCII `"{t}.{rawBody}"` under the endpoint's `whsec_` secret. A
+        receiver recomputes it over the untouched received body to authenticate the callback.
+      schema: { type: string }
+
+  responses:
+    Problem:
+      description: RFC 7807 problem detail.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    RailId:
+      type: string
+      description: A payment rail behind pay()/buy(). The only place vendor/protocol names appear.
+      enum: [x402, mpp, ap2, acp, ucp, card, onchain, l402]
+
+    Outcome:
+      type: string
+      description: The gate's verdict. Deny-first.
+      enum: [allow, confirm, deny]
+
+    Reversibility:
+      type: string
+      enum: [reversible, irreversible]
+
+    Finality:
+      type: string
+      enum: [instant, deferred]
+
+    CapitalSource:
+      type: string
+      description: Who fronts capital across the settlement.
+      enum: [payer, facilitator, merchant_of_record, solver]
+
+    Presence:
+      type: string
+      description: Human-presence requirement at authorization time.
+      enum: [present, delegated]
+
+    Amount:
+      type: object
+      additionalProperties: false
+      required: [value, asset]
+      properties:
+        value:
+          type: string
+          description: Minor units / atomic, carried as a string to avoid float loss.
+        asset:
+          type: string
+          description: Currency code or CAIP-19 asset id.
+
+    Terms:
+      type: object
+      additionalProperties: false
+      description: |
+        The six irreducible fields — explicit on every Intent and Receipt, never
+        silently defaulted. This is what the Gate reasons over.
+      required: [reversibility, finality, credential, rail, capital_source, presence]
+      properties:
+        reversibility:
+          $ref: "#/components/schemas/Reversibility"
+        finality:
+          $ref: "#/components/schemas/Finality"
+        credential:
+          type: string
+          description: Authorization model id, e.g. "eip3009" | "vc-mandate" | "http-sig".
+        rail:
+          $ref: "#/components/schemas/RailId"
+        capital_source:
+          $ref: "#/components/schemas/CapitalSource"
+        presence:
+          $ref: "#/components/schemas/Presence"
+
+    Mandate:
+      type: object
+      additionalProperties: false
+      description: Operator-granted, scoped, capped, expiring spend authority.
+      required: [id, payees, per_tx_cap, per_period_cap, period, expires_at]
+      properties:
+        id:
+          type: string
+        payees:
+          type: array
+          description: Allowed counterparties (CAIP-10 where on-chain).
+          items:
+            type: string
+        per_tx_cap:
+          $ref: "#/components/schemas/Amount"
+        per_period_cap:
+          $ref: "#/components/schemas/Amount"
+        period:
+          type: string
+          description: ISO-8601 duration for the period cap window.
+        expires_at:
+          type: string
+          format: date-time
+        constraints:
+          type: object
+          additionalProperties: true
+
+    Grant:
+      type: object
+      additionalProperties: false
+      description: An operator-counter-signed delegation of scope to an agent key.
+      required: [agent_id, mandate_id, expires_at, signature]
+      properties:
+        agent_id:
+          type: string
+        mandate_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        signature:
+          type: string
+
+    Envelope:
+      type: object
+      additionalProperties: false
+      description: The layered signed delegation wrapping an Intent — identity + mandate + provenance.
+      required: [identity, mandate_id, grant, signature]
+      properties:
+        identity:
+          type: string
+          description: Caller agent id (signed disclosure / ERC-8004, CAIP-addressed).
+        mandate_id:
+          type: string
+        grant:
+          $ref: "#/components/schemas/Grant"
+        signature:
+          type: string
+
+    Intent:
+      type: object
+      additionalProperties: false
+      description: A signed request to move value. Input to pay(); never carries a settle primitive.
+      required: [idempotency_key, payee, amount, purpose, terms, envelope]
+      properties:
+        idempotency_key:
+          type: string
+        payee:
+          type: string
+          description: Resolved to a CAIP-10 account where the rail is on-chain.
+        amount:
+          $ref: "#/components/schemas/Amount"
+        purpose:
+          type: string
+        terms:
+          $ref: "#/components/schemas/Terms"
+        envelope:
+          $ref: "#/components/schemas/Envelope"
+
+    Decision:
+      type: object
+      additionalProperties: false
+      description: The gate's decision on an Intent.
+      required: [outcome, reasons, mandate_id]
+      properties:
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        reasons:
+          type: array
+          items:
+            type: string
+        mandate_id:
+          type: string
+
+    Receipt:
+      type: object
+      additionalProperties: false
+      description: Durable, machine-parseable proof of settlement.
+      required: [intent_key, rail, reference, terms, settled_at, enforcement]
+      properties:
+        intent_key:
+          type: string
+        rail:
+          $ref: "#/components/schemas/RailId"
+        reference:
+          type: string
+          description: Rail settlement reference / on-chain tx hash.
+        terms:
+          $ref: "#/components/schemas/Terms"
+        settled_at:
+          type: string
+          format: date-time
+        enforcement:
+          type: string
+          description: Proof-of-Enforcement hash, byte-identical between emitter and verifier.
+
+    Disclosure:
+      type: object
+      additionalProperties: false
+      description: >
+        A signed self-description (identity + provenance). GL's disclosure format.
+        BREAKING CHANGE (version 2026-07-23): collapsed onto the full signed envelope.
+        The prior shape {agent_id, document, signature: string} carried a single key and
+        could not express key rotation; it is replaced by the structured ed25519 signature
+        and an optional rotation_chain. The wire shape now equals the signed envelope both
+        sides exchange, so a rotated signing key can disclose while the stable agent id
+        (document.agentId) is preserved. No agent_id at the top level: it lives in the
+        signed document.
+      required: [document, signature]
+      properties:
+        document:
+          type: object
+          additionalProperties: true
+          description: >
+            The signed disclosure document (an AgentDisclosure). Its `agentId` field is the
+            stable identity the signature (and any rotation_chain) roots at.
+        signature:
+          type: object
+          additionalProperties: false
+          description: The ed25519 signature over the canonicalized document.
+          required: [algorithm, public_key, value]
+          properties:
+            algorithm:
+              type: string
+              enum: [ed25519]
+            public_key:
+              type: string
+              description: >
+                Signer's public key (hex). Equals document.agentId in the common case;
+                under rotation it is the current key at the tip of rotation_chain.
+            value:
+              type: string
+              description: Signature over the canonicalized document (hex).
+        rotation_chain:
+          type: array
+          description: >
+            Present only when the signing key has rotated away from document.agentId; links
+            the stable id to signature.public_key. Absent in the common no-rotation case.
+          items:
+            $ref: "#/components/schemas/KeyRotationStatement"
+
+    KeyRotationStatement:
+      type: object
+      additionalProperties: false
+      description: >
+        One signed hop of a key-rotation chain: the old key signs the move to the new key,
+        so an identity survives a key change (an agentId IS its public key).
+      required: [type, from, to, rotated_at, signature]
+      properties:
+        type:
+          type: string
+          enum: [rotation]
+        from:
+          type: string
+          description: agentId (public key hex) being rotated away from.
+        to:
+          type: string
+          description: agentId (public key hex) being rotated to.
+        rotated_at:
+          type: string
+          format: date-time
+        signature:
+          type: string
+          description: Old key's signature over {type, from, to, rotated_at} (hex).
+
+    Counterparty:
+      type: object
+      additionalProperties: false
+      description: A normalized, resolved identity + accepted rails + trust.
+      required: [id, transport, capabilities, rails]
+      properties:
+        id:
+          type: string
+        transport:
+          type: string
+          enum: [a2a, disclosure, caip]
+        capabilities:
+          type: array
+          items:
+            type: string
+        rails:
+          type: array
+          items:
+            $ref: "#/components/schemas/RailId"
+        trust:
+          type: object
+          additionalProperties: true
+
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      description: A single signed, hash-linked entry in the audit trail.
+      required: [type, at, payload]
+      properties:
+        type:
+          type: string
+          description: Monotonic wire event type, e.g. "intent.gated" | "intent.settled".
+        at:
+          type: string
+          format: date-time
+        intent_key:
+          type: string
+        prev:
+          type: string
+          description: HMAC hash of the previous entry — the hash-link.
+        payload:
+          type: object
+          additionalProperties: true
+
+    Page:
+      type: object
+      description: |
+        A cursor-paginated page envelope. `data` holds the items; `next_cursor` names the last
+        item so the next call resumes strictly after it (no overlap, no gap). Concrete `data`
+        item types are given by the referencing operation.
+      required: [data, has_more, next_cursor]
+      properties:
+        data:
+          type: array
+          items: {}
+        has_more:
+          type: boolean
+          description: True when items remain after this page.
+        next_cursor:
+          type: [string, "null"]
+          description: Token for the next page, or null when `has_more` is false.
+
+    JobStatus:
+      type: string
+      description: |
+        Terminal-state enum for a job, grounded one-for-one in the store states. `pending` is
+        the only non-terminal state (parked, awaiting operator approval).
+      enum: [pending, settled, denied, failed]
+
+    Job:
+      type: object
+      additionalProperties: false
+      description: A read projection over an intent's confirm-park-approve lifecycle.
+      required: [id, status, created_at, outcome, links]
+      properties:
+        id:
+          type: string
+          description: The idempotency/intent key — the stable resource id.
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        created_at:
+          type: string
+          format: date-time
+          description: The intent's first audit entry, falling back to its settle time.
+        terminal_at:
+          type: string
+          format: date-time
+          description: Set ONLY for terminal states (settled/denied/failed).
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        receipt:
+          $ref: "#/components/schemas/Receipt"
+        problem:
+          $ref: "#/components/schemas/Problem"
+        pending:
+          type: object
+          additionalProperties: false
+          description: Resume material, present only on a pending job.
+          properties:
+            mandateId: { type: string }
+            challenge:
+              type: string
+              description: Opaque challenge an operator approval binds to.
+        links:
+          type: object
+          additionalProperties: false
+          required: [self, events]
+          properties:
+            self: { type: string }
+            events: { type: string }
+
+    UsageSummary:
+      type: object
+      additionalProperties: false
+      description: Metered call counts for one principal over a half-open window. Counts only.
+      required: [keyId, since, until, total, byOperation, byOutcome]
+      properties:
+        keyId: { type: string }
+        since: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        total:
+          type: integer
+          description: Total calls counted in the window (after any tag filter).
+        byOperation:
+          type: object
+          additionalProperties: { type: integer }
+          description: 'Count keyed by operation, e.g. { pay: 3, resolve: 1 }.'
+        byOutcome:
+          type: object
+          additionalProperties: { type: integer }
+          description: 'Count keyed by outcome, e.g. { allow: 2, deny: 1 }.'
+
+    WebhookEventType:
+      type: string
+      description: The outbound event types a subscription filters on.
+      enum: [payment.settled, intent.denied, approval.pending, audit.appended]
+
+    WebhookEndpoint:
+      type: object
+      additionalProperties: false
+      description: A registered delivery endpoint as the reads expose it (secret redacted).
+      required: [id, url, events, active]
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/WebhookEventType" }
+        active: { type: boolean }
+
+    WebhookEndpointCreated:
+      allOf:
+        - $ref: "#/components/schemas/WebhookEndpoint"
+        - type: object
+          required: [secret]
+          properties:
+            secret:
+              type: string
+              description: The `whsec_` HMAC signing secret. Shown ONCE, at create, never again.
+
+    WebhookEvent:
+      type: object
+      additionalProperties: false
+      description: |
+        One delivered webhook event, derived from a signed audit entry. `id` is deterministic
+        in the source entry (dedup key across at-least-once retries). Signed with the endpoint's
+        secret via the `GL-Signature` header.
+      required: [id, type, created_at, data]
+      properties:
+        id:
+          type: string
+          description: Deterministic event id, `evt_<audit_hash>`.
+        type:
+          $ref: "#/components/schemas/WebhookEventType"
+        created_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+          description: |
+            The source entry's payload plus the chain coordinates (`audit_seq`, `audit_hash`,
+            `audit_type`) that let a consumer re-verify the underlying signed audit entry. For
+            `payment.settled` a Receipt-shaped record; for `intent.denied` / `approval.pending`
+            the gate Decision; for `audit.appended` the whole AuditEvent.
+
+    Order:
+      type: object
+      additionalProperties: false
+      description: The completed result of buy(). Beta.
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, authorized, completed, cancelled]
+        receipt:
+          $ref: "#/components/schemas/Receipt"
+        cart:
+          $ref: "#/components/schemas/Cart"
+
+    Cart:
+      type: object
+      additionalProperties: false
+      description: A server-authoritative priced checkout state. Beta.
+      required: [id, total]
+      properties:
+        id:
+          type: string
+        total:
+          $ref: "#/components/schemas/Amount"
+        line_items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        expires_at:
+          type: string
+          format: date-time
+
+    Proof:
+      type: object
+      additionalProperties: false
+      description: A falsifiable Proof-of-Enforcement record binding authorization scope to execution outcome.
+      required: [policy_hash, intent_key]
+      properties:
+        policy_hash:
+          type: string
+          description: Byte-identical between the enforcement emitter and the independent verifier.
+        intent_key:
+          type: string
+        verified:
+          type: boolean
+
+    Problem:
+      type: object
+      description: |
+        RFC 7807 problem detail. For an agent the error IS the recovery instruction:
+        `code` is a stable machine token to branch on and `retry_after` is a valid-retry hint.
+      additionalProperties: true
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: A URI reference identifying the problem type.
+          default: "about:blank"
+        title:
+          type: string
+          description: Short, human-readable summary of the problem type.
+        status:
+          type: integer
+          description: HTTP status code.
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri
+        code:
+          type: string
+          description: Stable machine code an agent branches on, e.g. "over_mandate" | "rate_limited".
+        retry_after:
+          type: integer
+          description: Valid-retry hint in seconds; absent when the call must not be retried as-is.
+
+    OperatorApprove:
+      type: object
+      additionalProperties: false
+      description: |
+        Resume material for a parked intent, exactly as carried on an `approval.pending`
+        problem, plus the operator's rationale and challenge-response acknowledgement.
+      required: [intent_id, challenge, mandate_id, rationale, acknowledged]
+      properties:
+        intent_id:
+          type: string
+          description: The parked intent id.
+        challenge:
+          type: string
+          description: The opaque challenge that binds this approval to that intent. Not a bearer credential.
+        mandate_id:
+          type: string
+          description: The mandate the gate matched when it parked the intent.
+        rationale:
+          type: string
+          minLength: 10
+          description: Why the operator is releasing it. Recorded in the signed audit chain.
+        acknowledged:
+          type: boolean
+          description: |
+            Explicit challenge-response acknowledgement. Never inferred: a high-risk,
+            irreversible or large intent is not released unless this is `true`.
+
+    OperatorRefund:
+      type: object
+      additionalProperties: false
+      required: [intent_id, rationale]
+      properties:
+        intent_id:
+          type: string
+        amount_minor:
+          type: integer
+          minimum: 1
+          description: Minor units to refund. Omitted, the full outstanding amount.
+        rationale:
+          type: string
+          minLength: 10
+
+    OperatorKillSwitch:
+      type: object
+      additionalProperties: false
+      required: [engaged, rationale]
+      properties:
+        engaged:
+          type: boolean
+          description: True freezes the settle path; false releases it. Signed separately per direction.
+        rationale:
+          type: string
+          minLength: 10
+
+    OperatorRationale:
+      type: object
+      additionalProperties: false
+      required: [rationale]
+      properties:
+        rationale:
+          type: string
+          minLength: 10
+
+    RefundResult:
+      type: object
+      additionalProperties: false
+      required: [ok, refunded_minor]
+      properties:
+        ok:
+          type: boolean
+        refunded_minor:
+          type: integer
+          description: Cumulative minor units refunded against the intent.
+        reason:
+          type: string
+          description: Present on refusal, e.g. an irreversible settlement.
+
+    OperatorStateView:
+      type: object
+      additionalProperties: false
+      description: The live halt state, returned so an operator sees the effect of what they just did.
+      required: [kill_switch_engaged, circuit_breaker_open]
+      properties:
+        kill_switch_engaged:
+          type: boolean
+        circuit_breaker_open:
+          type: boolean
