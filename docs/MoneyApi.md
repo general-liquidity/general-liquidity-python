@@ -85,7 +85,7 @@ Name | Type | Description  | Notes
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
 **200** | Settled. A durable, machine-parseable Receipt. |  -  |
-**202** | Gate returned &#x60;confirm&#x60; — human approval required before settlement. |  -  |
+**202** | Accepted but not settled. Either the gate returned &#x60;confirm&#x60; (a human-approval &#x60;Decision&#x60; is returned), or — on a deployment that wired the optional clearing band&#39;s PENDING state — the spend is bound to an obligation whose admissibility floor is not yet met and its deadline has not passed, so the value is HELD (&#x60;PendingSettlement&#x60;, problem type &#x60;clearing.pending&#x60;) naming the awaited evidence class. The hold auto-releases on a later attempt once admissible evidence exists, or refuses once the deadline passes. Both are default-off: a stack without a PENDING clearing band never returns &#x60;PendingSettlement&#x60;.  |  -  |
 **400** | RFC 7807 problem detail. |  -  |
 **401** | RFC 7807 problem detail. |  -  |
 **403** | Gate returned &#x60;deny&#x60;. The Intent falls outside mandate/policy. |  -  |

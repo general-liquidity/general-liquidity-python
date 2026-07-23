@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: "General Liquidity: The Machine Economy API"
-  version: "2026-07-25"
+  version: "2026-07-26"
   summary: One governed, unified surface over payment, commerce, identity, and provenance.
   description: |
     General Liquidity (GL) is one governed surface over payment, commerce, identity,
@@ -117,11 +117,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Receipt"
         "202":
-          description: Gate returned `confirm` — human approval required before settlement.
+          description: >
+            Accepted but not settled. Either the gate returned `confirm` (a human-approval
+            `Decision` is returned), or — on a deployment that wired the optional clearing band's
+            PENDING state — the spend is bound to an obligation whose admissibility floor is not
+            yet met and its deadline has not passed, so the value is HELD (`PendingSettlement`,
+            problem type `clearing.pending`) naming the awaited evidence class. The hold
+            auto-releases on a later attempt once admissible evidence exists, or refuses once the
+            deadline passes. Both are default-off: a stack without a PENDING clearing band never
+            returns `PendingSettlement`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Decision"
+                oneOf:
+                  - $ref: "#/components/schemas/Decision"
+                  - $ref: "#/components/schemas/PendingSettlement"
         "400": { $ref: "#/components/responses/Problem" }
         "401": { $ref: "#/components/responses/Problem" }
         "403":
@@ -1096,6 +1106,45 @@ components:
         enforcement:
           type: string
           description: Proof-of-Enforcement hash, byte-identical between emitter and verifier.
+
+    EvidenceClass:
+      type: string
+      description: >
+        The admissibility ladder for delivery evidence, weakest to strongest. `wit` and `rec`
+        are deliberately incomparable; `pote` (Proof-of-Task-Execution) is the strongest.
+      enum: [self, sign, wit, rec, att, proof, pote]
+
+    PendingSettlement:
+      type: object
+      additionalProperties: false
+      description: >
+        An RFC 7807 problem (type `clearing.pending`) returned when an optional PENDING clearing
+        band holds a bound spend: it was gated and authorized, but the obligation's admissibility
+        floor is not yet met and the deadline has not passed, so the value is HELD rather than
+        settled or refused. Retry once admissible evidence exists (the hold auto-releases to a
+        `Receipt`); the hold refuses once the deadline passes. Only present on a stack that wired
+        the clearing band's PENDING state.
+      required: [type, title, obligation_id, state, awaiting]
+      properties:
+        type:
+          type: string
+          enum: [clearing.pending]
+        title:
+          type: string
+        obligation_id:
+          type: string
+          description: The obligation the spend is conditional on.
+        state:
+          type: string
+          enum: [pending]
+        awaiting:
+          allOf:
+            - $ref: "#/components/schemas/EvidenceClass"
+          description: The admissibility class still awaited before the spend can settle.
+        achieved_class:
+          allOf:
+            - $ref: "#/components/schemas/EvidenceClass"
+          description: The strongest class the admitted evidence has reached so far.
 
     Disclosure:
       type: object
