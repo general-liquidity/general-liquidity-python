@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 **var_from** | **str** | agentId (public key hex) being rotated away from. | 
 **to** | **str** | agentId (public key hex) being rotated to. | 
 **rotated_at** | **datetime** |  | 
-**signature** | **str** | Old key&#39;s signature over {type, from, to, rotated_at} (hex). | 
+**signature** | **str** | Old key&#39;s signature over {type, from, to, rotatedAt} (hex). | 
 
 ## Example
 

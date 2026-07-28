@@ -14,10 +14,10 @@
 
 import unittest
 
-from general_liquidity.models.quote_request import QuoteRequest
+from general_liquidity.models.decision_check import DecisionCheck
 
-class TestQuoteRequest(unittest.TestCase):
-    """QuoteRequest unit test stubs"""
+class TestDecisionCheck(unittest.TestCase):
+    """DecisionCheck unit test stubs"""
 
     def setUp(self):
         pass
@@ -25,29 +25,28 @@ class TestQuoteRequest(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> QuoteRequest:
-        """Test QuoteRequest
+    def make_instance(self, include_optional) -> DecisionCheck:
+        """Test DecisionCheck
             include_optional is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `QuoteRequest`
+        # uncomment below to create an instance of `DecisionCheck`
         """
-        model = QuoteRequest()
+        model = DecisionCheck()
         if include_optional:
-            return QuoteRequest(
-                what = '',
-                constraints = {
-                    'key' : null
-                    }
+            return DecisionCheck(
+                id = '',
+                passed = True
             )
         else:
-            return QuoteRequest(
-                what = '',
+            return DecisionCheck(
+                id = '',
+                passed = True,
         )
         """
 
-    def testQuoteRequest(self):
-        """Test QuoteRequest"""
+    def testDecisionCheck(self):
+        """Test DecisionCheck"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

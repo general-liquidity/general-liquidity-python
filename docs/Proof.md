@@ -1,6 +1,6 @@
 # Proof
 
-A falsifiable Proof-of-Enforcement record binding authorization scope to execution outcome.
+A falsifiable enforcement record binding authorization scope to execution outcome.
 
 ## Properties
 

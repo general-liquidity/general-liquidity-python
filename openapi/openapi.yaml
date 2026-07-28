@@ -7,7 +7,11 @@ info:
     General Liquidity (GL) is one governed surface over payment, commerce, identity,
     and provenance for the machine economy. A caller submits a signed `Intent`, a
     deny-first gate decides, and only the server holds the settle primitive, so the
-    caller never does. The wire convention is `snake_case`.
+    caller never does. Field names are `camelCase` on the wire, identical to the
+    TypeScript spelling in `packages/surface`, so nothing is renamed between the
+    typed client and the server that validates it. Three OUTBOUND-ONLY envelopes
+    predate that rule and are still emitted `snake_case`: `Page`, `Job` and
+    `WebhookEvent`. They are documented as served, and no request body carries them.
   contact:
     name: General Liquidity
     url: https://generalliquidity.com
@@ -975,7 +979,7 @@ components:
       description: |
         The six irreducible fields — explicit on every Intent and Receipt, never
         silently defaulted. This is what the Gate reasons over.
-      required: [reversibility, finality, credential, rail, capital_source, presence]
+      required: [reversibility, finality, credential, rail, capitalSource, presence]
       properties:
         reversibility:
           $ref: "#/components/schemas/Reversibility"
@@ -986,7 +990,7 @@ components:
           description: Authorization model id, e.g. "eip3009" | "vc-mandate" | "http-sig".
         rail:
           $ref: "#/components/schemas/RailId"
-        capital_source:
+        capitalSource:
           $ref: "#/components/schemas/CapitalSource"
         presence:
           $ref: "#/components/schemas/Presence"
@@ -995,7 +999,7 @@ components:
       type: object
       additionalProperties: false
       description: Operator-granted, scoped, capped, expiring spend authority.
-      required: [id, payees, per_tx_cap, per_period_cap, period, expires_at]
+      required: [id, payees, perTxCap, perPeriodCap, period, expiresAt]
       properties:
         id:
           type: string
@@ -1004,14 +1008,14 @@ components:
           description: Allowed counterparties (CAIP-10 where on-chain).
           items:
             type: string
-        per_tx_cap:
+        perTxCap:
           $ref: "#/components/schemas/Amount"
-        per_period_cap:
+        perPeriodCap:
           $ref: "#/components/schemas/Amount"
         period:
           type: string
           description: ISO-8601 duration for the period cap window.
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
         constraints:
@@ -1022,13 +1026,13 @@ components:
       type: object
       additionalProperties: false
       description: An operator-counter-signed delegation of scope to an agent key.
-      required: [agent_id, mandate_id, expires_at, signature]
+      required: [agentId, mandateId, expiresAt, signature]
       properties:
-        agent_id:
+        agentId:
           type: string
-        mandate_id:
+        mandateId:
           type: string
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
         signature:
@@ -1038,12 +1042,12 @@ components:
       type: object
       additionalProperties: false
       description: The layered signed delegation wrapping an Intent — identity + mandate + provenance.
-      required: [identity, mandate_id, grant, signature]
+      required: [identity, mandateId, grant, signature]
       properties:
         identity:
           type: string
           description: Caller agent id (signed disclosure / ERC-8004, CAIP-addressed).
-        mandate_id:
+        mandateId:
           type: string
         grant:
           $ref: "#/components/schemas/Grant"
@@ -1054,9 +1058,9 @@ components:
       type: object
       additionalProperties: false
       description: A signed request to move value. Input to pay(); never carries a settle primitive.
-      required: [idempotency_key, payee, amount, purpose, terms, envelope]
+      required: [idempotencyKey, payee, amount, purpose, terms, envelope]
       properties:
-        idempotency_key:
+        idempotencyKey:
           type: string
         payee:
           type: string
@@ -1074,7 +1078,7 @@ components:
       type: object
       additionalProperties: false
       description: The gate's decision on an Intent.
-      required: [outcome, reasons, mandate_id]
+      required: [outcome, reasons, mandateId]
       properties:
         outcome:
           $ref: "#/components/schemas/Outcome"
@@ -1082,16 +1086,37 @@ components:
           type: array
           items:
             type: string
-        mandate_id:
+        mandateId:
           type: string
+        checks:
+          type: array
+          description: >
+            The policy predicates the gate actually evaluated, in evaluation order. Optional:
+            a decision recorded before checks existed carries none, and absent is NOT
+            "all passed".
+          items:
+            $ref: "#/components/schemas/DecisionCheck"
+
+    DecisionCheck:
+      type: object
+      additionalProperties: false
+      description: >
+        One policy predicate the gate evaluated, named by a stable id. Unlike `reasons`, which
+        is prose for a human, a check is safe to persist, compare across versions and switch on.
+      required: [id, passed]
+      properties:
+        id:
+          type: string
+        passed:
+          type: boolean
 
     Receipt:
       type: object
       additionalProperties: false
       description: Durable, machine-parseable proof of settlement.
-      required: [intent_key, rail, reference, terms, settled_at, enforcement]
+      required: [intentKey, rail, reference, terms, settledAt, enforcement]
       properties:
-        intent_key:
+        intentKey:
           type: string
         rail:
           $ref: "#/components/schemas/RailId"
@@ -1100,12 +1125,12 @@ components:
           description: Rail settlement reference / on-chain tx hash.
         terms:
           $ref: "#/components/schemas/Terms"
-        settled_at:
+        settledAt:
           type: string
           format: date-time
         enforcement:
           type: string
-          description: Proof-of-Enforcement hash, byte-identical between emitter and verifier.
+          description: Enforcement hash, byte-identical between emitter and verifier.
 
     EvidenceClass:
       type: string
@@ -1124,14 +1149,14 @@ components:
         settled or refused. Retry once admissible evidence exists (the hold auto-releases to a
         `Receipt`); the hold refuses once the deadline passes. Only present on a stack that wired
         the clearing band's PENDING state.
-      required: [type, title, obligation_id, state, awaiting]
+      required: [type, title, obligationId, state, awaiting]
       properties:
         type:
           type: string
           enum: [clearing.pending]
         title:
           type: string
-        obligation_id:
+        obligationId:
           type: string
           description: The obligation the spend is conditional on.
         state:
@@ -1141,7 +1166,7 @@ components:
           allOf:
             - $ref: "#/components/schemas/EvidenceClass"
           description: The admissibility class still awaited before the spend can settle.
-        achieved_class:
+        achievedClass:
           allOf:
             - $ref: "#/components/schemas/EvidenceClass"
           description: The strongest class the admitted evidence has reached so far.
@@ -1152,11 +1177,11 @@ components:
       description: >
         A signed self-description (identity + provenance). GL's disclosure format.
         BREAKING CHANGE (version 2026-07-23): collapsed onto the full signed envelope.
-        The prior shape {agent_id, document, signature: string} carried a single key and
+        The prior shape {agentId, document, signature: string} carried a single key and
         could not express key rotation; it is replaced by the structured ed25519 signature
-        and an optional rotation_chain. The wire shape now equals the signed envelope both
+        and an optional rotationChain. The wire shape now equals the signed envelope both
         sides exchange, so a rotated signing key can disclose while the stable agent id
-        (document.agentId) is preserved. No agent_id at the top level: it lives in the
+        (document.agentId) is preserved. No agentId at the top level: it lives in the
         signed document.
       required: [document, signature]
       properties:
@@ -1165,29 +1190,29 @@ components:
           additionalProperties: true
           description: >
             The signed disclosure document (an AgentDisclosure). Its `agentId` field is the
-            stable identity the signature (and any rotation_chain) roots at.
+            stable identity the signature (and any rotationChain) roots at.
         signature:
           type: object
           additionalProperties: false
           description: The ed25519 signature over the canonicalized document.
-          required: [algorithm, public_key, value]
+          required: [algorithm, publicKey, value]
           properties:
             algorithm:
               type: string
               enum: [ed25519]
-            public_key:
+            publicKey:
               type: string
               description: >
                 Signer's public key (hex). Equals document.agentId in the common case;
-                under rotation it is the current key at the tip of rotation_chain.
+                under rotation it is the current key at the tip of rotationChain.
             value:
               type: string
               description: Signature over the canonicalized document (hex).
-        rotation_chain:
+        rotationChain:
           type: array
           description: >
             Present only when the signing key has rotated away from document.agentId; links
-            the stable id to signature.public_key. Absent in the common no-rotation case.
+            the stable id to signature.publicKey. Absent in the common no-rotation case.
           items:
             $ref: "#/components/schemas/KeyRotationStatement"
 
@@ -1197,7 +1222,7 @@ components:
       description: >
         One signed hop of a key-rotation chain: the old key signs the move to the new key,
         so an identity survives a key change (an agentId IS its public key).
-      required: [type, from, to, rotated_at, signature]
+      required: [type, from, to, rotatedAt, signature]
       properties:
         type:
           type: string
@@ -1208,12 +1233,12 @@ components:
         to:
           type: string
           description: agentId (public key hex) being rotated to.
-        rotated_at:
+        rotatedAt:
           type: string
           format: date-time
         signature:
           type: string
-          description: Old key's signature over {type, from, to, rotated_at} (hex).
+          description: Old key's signature over {type, from, to, rotatedAt} (hex).
 
     Counterparty:
       type: object
@@ -1250,7 +1275,7 @@ components:
         at:
           type: string
           format: date-time
-        intent_key:
+        intentKey:
           type: string
         prev:
           type: string
@@ -1608,66 +1633,106 @@ components:
           type: string
         total:
           $ref: "#/components/schemas/Amount"
-        line_items:
+        lineItems:
           type: array
           items:
             type: object
             additionalProperties: true
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
 
     Proof:
       type: object
       additionalProperties: false
-      description: A falsifiable Proof-of-Enforcement record binding authorization scope to execution outcome.
-      required: [policy_hash, intent_key]
+      description: A falsifiable enforcement record binding authorization scope to execution outcome.
+      required: [policyHash, intentKey]
       properties:
-        policy_hash:
+        policyHash:
           type: string
           description: Byte-identical between the enforcement emitter and the independent verifier.
-        intent_key:
+        intentKey:
           type: string
         verified:
           type: boolean
 
+    # One definition covers BOTH tiers of this API: the product paths below and the
+    # meta-model-generated protocol paths served alongside them share a single problem body,
+    # because both are serialized from the same `surface` error vocabulary. packages/spec-test
+    # asserts this schema against the generated one, so the two can no longer describe the
+    # same body differently.
+    #
+    # Field names are camelCase, like every other request and response body: the server writes
+    # this body straight out of the shared surface type with no casing pass.
     Problem:
       type: object
       description: |
-        RFC 7807 problem detail. For an agent the error IS the recovery instruction:
-        `code` is a stable machine token to branch on and `retry_after` is a valid-retry hint.
+        RFC 9457 problem detail. For an agent the error IS the recovery instruction: `action` is
+        the closed four-value class to branch on, `code` is the stable machine token behind it,
+        and `retryAfter` is a valid-retry hint.
       additionalProperties: true
-      required: [type, title, status]
+      required: [type, title, status, detail, code, action, retryable]
       properties:
         type:
           type: string
           format: uri
-          description: A URI reference identifying the problem type.
-          default: "about:blank"
+          description: |
+            Dereferenceable per-code guidance, `https://docs.generalliquidity.com/problems/{code}`.
+            Never `about:blank`: an agent that hits an error can fetch the explanation for exactly
+            this code without a human in the loop.
         title:
           type: string
           description: Short, human-readable summary of the problem type.
         status:
           type: integer
           description: HTTP status code.
-          minimum: 100
-          maximum: 599
         detail:
           type: string
           description: Human-readable explanation specific to this occurrence.
-        instance:
-          type: string
-          format: uri
         code:
           type: string
           description: |
-            Stable machine code an agent branches on, e.g. "over_mandate" | "rate_limited". The
+            Stable machine code an agent branches on, e.g. "intent.denied" | "rate_limited". The
             memory group adds: "memory.denied" (403, engine refused a gated write), "memory.forbidden"
             (403, mandate scope/capability refusal), and "memory.pending" (202, write parked for
             operator confirmation).
-        retry_after:
+        action:
+          type: string
+          description: |
+            What the caller should do next. Switch on this, not on `code`: new codes arrive over
+            time and a client branching on `code` breaks when one does, while these four classes
+            are closed.
+          enum: [never-retry, retry-as-is, retry-after-renegotiation, escalate-to-human]
+        retryable:
+          type: boolean
+          description: Derived from `action`. Kept so existing clients reading a boolean still work.
+        retryAfter:
           type: integer
           description: Valid-retry hint in seconds; absent when the call must not be retried as-is.
+        reasons:
+          type: array
+          items: { type: string }
+          description: Structural context, e.g. the gate's reasons behind a refusal.
+        approval:
+          type: object
+          description: |
+            Set on `approval.pending`: how to resume the parked intent. NONE of this is approval
+            authority; it only names the parked payment.
+          additionalProperties: true
+          required: [intentId, challenge]
+          properties:
+            intentId:
+              type: string
+              description: The parked intent id.
+            challenge:
+              type: string
+              description: Opaque challenge the approval binds to. Not a bearer credential.
+            mandateId:
+              type: string
+              description: The mandate the gate matched, when it matched one.
+        currentStateToken:
+          type: string
+          description: "Set on `state.stale`: the global state token the kernel actually holds."
 
     OperatorApprove:
       type: object
@@ -1675,15 +1740,15 @@ components:
       description: |
         Resume material for a parked intent, exactly as carried on an `approval.pending`
         problem, plus the operator's rationale and challenge-response acknowledgement.
-      required: [intent_id, challenge, mandate_id, rationale, acknowledged]
+      required: [intentId, challenge, mandateId, rationale, acknowledged]
       properties:
-        intent_id:
+        intentId:
           type: string
           description: The parked intent id.
         challenge:
           type: string
           description: The opaque challenge that binds this approval to that intent. Not a bearer credential.
-        mandate_id:
+        mandateId:
           type: string
           description: The mandate the gate matched when it parked the intent.
         rationale:
@@ -1699,11 +1764,11 @@ components:
     OperatorRefund:
       type: object
       additionalProperties: false
-      required: [intent_id, rationale]
+      required: [intentId, rationale]
       properties:
-        intent_id:
+        intentId:
           type: string
-        amount_minor:
+        amountMinor:
           type: integer
           minimum: 1
           description: Minor units to refund. Omitted, the full outstanding amount.
@@ -1735,11 +1800,11 @@ components:
     RefundResult:
       type: object
       additionalProperties: false
-      required: [ok, refunded_minor]
+      required: [ok, refundedMinor]
       properties:
         ok:
           type: boolean
-        refunded_minor:
+        refundedMinor:
           type: integer
           description: Cumulative minor units refunded against the intent.
         reason:
@@ -1750,9 +1815,9 @@ components:
       type: object
       additionalProperties: false
       description: The live halt state, returned so an operator sees the effect of what they just did.
-      required: [kill_switch_engaged, circuit_breaker_open]
+      required: [killSwitchEngaged, circuitBreakerOpen]
       properties:
-        kill_switch_engaged:
+        killSwitchEngaged:
           type: boolean
-        circuit_breaker_open:
+        circuitBreakerOpen:
           type: boolean

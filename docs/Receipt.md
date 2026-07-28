@@ -11,7 +11,7 @@ Name | Type | Description | Notes
 **reference** | **str** | Rail settlement reference / on-chain tx hash. | 
 **terms** | [**Terms**](Terms.md) |  | 
 **settled_at** | **datetime** |  | 
-**enforcement** | **str** | Proof-of-Enforcement hash, byte-identical between emitter and verifier. | 
+**enforcement** | **str** | Enforcement hash, byte-identical between emitter and verifier. | 
 
 ## Example
 

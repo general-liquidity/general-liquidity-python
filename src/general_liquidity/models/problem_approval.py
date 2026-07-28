@@ -17,37 +17,19 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
-from general_liquidity.models.evidence_class import EvidenceClass
 from typing import Optional, Set
 from typing_extensions import Self
 
-class PendingSettlement(BaseModel):
+class ProblemApproval(BaseModel):
     """
-    An RFC 7807 problem (type `clearing.pending`) returned when an optional PENDING clearing band holds a bound spend: it was gated and authorized, but the obligation's admissibility floor is not yet met and the deadline has not passed, so the value is HELD rather than settled or refused. Retry once admissible evidence exists (the hold auto-releases to a `Receipt`); the hold refuses once the deadline passes. Only present on a stack that wired the clearing band's PENDING state. 
+    Set on `approval.pending`: how to resume the parked intent. NONE of this is approval authority; it only names the parked payment. 
     """ # noqa: E501
-    type: StrictStr
-    title: StrictStr
-    obligation_id: StrictStr = Field(description="The obligation the spend is conditional on.", alias="obligationId")
-    state: StrictStr
-    awaiting: EvidenceClass = Field(description="The admissibility class still awaited before the spend can settle.")
-    achieved_class: Optional[EvidenceClass] = Field(default=None, description="The strongest class the admitted evidence has reached so far.", alias="achievedClass")
-    __properties: ClassVar[List[str]] = ["type", "title", "obligationId", "state", "awaiting", "achievedClass"]
-
-    @field_validator('type')
-    def type_validate_enum(cls, value):
-        """Validates the enum"""
-        if value not in set(['clearing.pending']):
-            raise ValueError("must be one of enum values ('clearing.pending')")
-        return value
-
-    @field_validator('state')
-    def state_validate_enum(cls, value):
-        """Validates the enum"""
-        if value not in set(['pending']):
-            raise ValueError("must be one of enum values ('pending')")
-        return value
+    intent_id: StrictStr = Field(description="The parked intent id.", alias="intentId")
+    challenge: StrictStr = Field(description="Opaque challenge the approval binds to. Not a bearer credential.")
+    mandate_id: Optional[StrictStr] = Field(default=None, description="The mandate the gate matched, when it matched one.", alias="mandateId")
+    __properties: ClassVar[List[str]] = ["intentId", "challenge", "mandateId"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -67,7 +49,7 @@ class PendingSettlement(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of PendingSettlement from a JSON string"""
+        """Create an instance of ProblemApproval from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -92,7 +74,7 @@ class PendingSettlement(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of PendingSettlement from a dict"""
+        """Create an instance of ProblemApproval from a dict"""
         if obj is None:
             return None
 
@@ -100,12 +82,9 @@ class PendingSettlement(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "type": obj.get("type"),
-            "title": obj.get("title"),
-            "obligationId": obj.get("obligationId"),
-            "state": obj.get("state"),
-            "awaiting": obj.get("awaiting"),
-            "achievedClass": obj.get("achievedClass")
+            "intentId": obj.get("intentId"),
+            "challenge": obj.get("challenge"),
+            "mandateId": obj.get("mandateId")
         })
         return _obj
 

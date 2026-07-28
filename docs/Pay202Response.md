@@ -8,6 +8,7 @@ Name | Type | Description | Notes
 **outcome** | [**Outcome**](Outcome.md) |  | 
 **reasons** | **List[str]** |  | 
 **mandate_id** | **str** |  | 
+**checks** | [**List[DecisionCheck]**](DecisionCheck.md) | The policy predicates the gate actually evaluated, in evaluation order. Optional: a decision recorded before checks existed carries none, and absent is NOT \&quot;all passed\&quot;.  | [optional] 
 **type** | **str** |  | 
 **title** | **str** |  | 
 **obligation_id** | **str** | The obligation the spend is conditional on. | 

@@ -86,10 +86,24 @@ java -jar "$JAR" generate \
   --git-repo-id general-liquidity-python \
   --additional-properties="packageName=$PKG,projectName=general-liquidity"
 
+# Hand-authored modules that live INSIDE the generated package directory. The relocation
+# below replaces that directory wholesale, so they are carried across it. Without this the
+# operator signing seam is deleted on every regeneration, and the codegen drift gate fails
+# on a deletion the script itself caused.
+HAND_WRITTEN="operator.py"
+
 # Relocate the generated package into the src-layout.
+KEEP="$(mktemp -d)"
+for f in $HAND_WRITTEN; do
+  [ -f "$REPO_ROOT/src/$PKG/$f" ] && cp "$REPO_ROOT/src/$PKG/$f" "$KEEP/$f"
+done
 rm -rf "$REPO_ROOT/src/$PKG"
 mkdir -p "$REPO_ROOT/src"
 cp -R "$TMP/$PKG" "$REPO_ROOT/src/$PKG"
+for f in $HAND_WRITTEN; do
+  [ -f "$KEEP/$f" ] && cp "$KEEP/$f" "$REPO_ROOT/src/$PKG/$f"
+done
+rm -rf "$KEEP"
 
 if [ -d "$TMP/docs" ]; then
   rm -rf "$REPO_ROOT/docs"

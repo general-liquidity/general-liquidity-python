@@ -7,7 +7,7 @@ The ed25519 signature over the canonicalized document.
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **algorithm** | **str** |  | 
-**public_key** | **str** | Signer&#39;s public key (hex). Equals document.agentId in the common case; under rotation it is the current key at the tip of rotation_chain.  | 
+**public_key** | **str** | Signer&#39;s public key (hex). Equals document.agentId in the common case; under rotation it is the current key at the tip of rotationChain.  | 
 **value** | **str** | Signature over the canonicalized document (hex). | 
 
 ## Example
