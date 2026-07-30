@@ -936,7 +936,7 @@ components:
     RailId:
       type: string
       description: A payment rail behind pay()/buy(). The only place vendor/protocol names appear.
-      enum: [x402, mpp, ap2, acp, ucp, card, onchain, l402]
+      enum: [x402, mpp, ap2, acp, ucp, card, onchain, l402, ach, wire]
 
     Outcome:
       type: string

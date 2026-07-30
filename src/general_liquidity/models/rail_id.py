@@ -34,6 +34,8 @@ class RailId(str, Enum):
     CARD = 'card'
     ONCHAIN = 'onchain'
     L402 = 'l402'
+    ACH = 'ach'
+    WIRE = 'wire'
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
