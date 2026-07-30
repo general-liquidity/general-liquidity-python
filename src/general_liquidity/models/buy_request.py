@@ -21,18 +21,24 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List
 from typing_extensions import Annotated
 from general_liquidity.models.commerce_line import CommerceLine
+from general_liquidity.models.envelope import Envelope
+from general_liquidity.models.terms import Terms
 from typing import Optional, Set
 from typing_extensions import Self
 
-class QuoteRequest(BaseModel):
+class BuyRequest(BaseModel):
     """
-    Enough to discover the merchant and price a cart. Every field here is read by the server; nothing else in the body is. 
+    The quote fields plus the mandate-bearing envelope and terms the authorize beat needs — the same envelope `/pay` carries, because the same gate evaluates it. No amount appears: the price is the merchant's, taken from the server-authoritative cart. 
     """ # noqa: E501
-    rail: StrictStr = Field(description="The checkout protocol to dispatch to. Validated against this closed set at the boundary — a `RailId` that is not a checkout protocol is refused here, not routed. ")
-    merchant: Annotated[str, Field(min_length=1, strict=True)] = Field(description="The merchant reference the checkout protocol resolves.")
-    currency: Annotated[str, Field(min_length=1, strict=True)] = Field(description="The currency the cart is to be priced in.")
-    lines: Annotated[List[CommerceLine], Field(min_length=1)] = Field(description="What to price. Must be non-empty.")
-    __properties: ClassVar[List[str]] = ["rail", "merchant", "currency", "lines"]
+    idempotency_key: Annotated[str, Field(min_length=1, strict=True)] = Field(description="Client-generated, server-enforced replay key, carried in the BODY (not the header) and namespaced apart from `/pay`'s. Stripped before the request reaches the checkout engine: the intent the gate evaluates is keyed on the merchant's own cart id. ", alias="idempotencyKey")
+    rail: StrictStr = Field(description="The checkout protocol to dispatch to.")
+    merchant: Annotated[str, Field(min_length=1, strict=True)]
+    currency: Annotated[str, Field(min_length=1, strict=True)]
+    lines: Annotated[List[CommerceLine], Field(min_length=1)]
+    purpose: StrictStr = Field(description="What the purchase is for. Evaluated by the gate, as on `/pay`.")
+    terms: Terms
+    envelope: Envelope
+    __properties: ClassVar[List[str]] = ["idempotencyKey", "rail", "merchant", "currency", "lines", "purpose", "terms", "envelope"]
 
     @field_validator('rail')
     def rail_validate_enum(cls, value):
@@ -59,7 +65,7 @@ class QuoteRequest(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of QuoteRequest from a JSON string"""
+        """Create an instance of BuyRequest from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -87,11 +93,17 @@ class QuoteRequest(BaseModel):
                 if _item_lines:
                     _items.append(_item_lines.to_dict())
             _dict['lines'] = _items
+        # override the default output from pydantic by calling `to_dict()` of terms
+        if self.terms:
+            _dict['terms'] = self.terms.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of envelope
+        if self.envelope:
+            _dict['envelope'] = self.envelope.to_dict()
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of QuoteRequest from a dict"""
+        """Create an instance of BuyRequest from a dict"""
         if obj is None:
             return None
 
@@ -99,10 +111,14 @@ class QuoteRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "idempotencyKey": obj.get("idempotencyKey"),
             "rail": obj.get("rail"),
             "merchant": obj.get("merchant"),
             "currency": obj.get("currency"),
-            "lines": [CommerceLine.from_dict(_item) for _item in obj["lines"]] if obj.get("lines") is not None else None
+            "lines": [CommerceLine.from_dict(_item) for _item in obj["lines"]] if obj.get("lines") is not None else None,
+            "purpose": obj.get("purpose"),
+            "terms": Terms.from_dict(obj["terms"]) if obj.get("terms") is not None else None,
+            "envelope": Envelope.from_dict(obj["envelope"]) if obj.get("envelope") is not None else None
         })
         return _obj
 

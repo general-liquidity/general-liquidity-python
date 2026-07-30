@@ -36,7 +36,10 @@ class TestOrder(unittest.TestCase):
         if include_optional:
             return Order(
                 id = '',
-                status = 'pending',
+                cart_id = '',
+                protocol = '',
+                status = 'priced',
+                merchant = '',
                 receipt = general_liquidity.models.receipt.Receipt(
                     intent_key = '', 
                     rail = 'x402', 
@@ -50,14 +53,29 @@ class TestOrder(unittest.TestCase):
                         presence = 'present', ), 
                     settled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
                     enforcement = '', ),
-                cart = {
-                    'key' : null
-                    }
+                placed_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f')
             )
         else:
             return Order(
                 id = '',
-                status = 'pending',
+                cart_id = '',
+                protocol = '',
+                status = 'priced',
+                merchant = '',
+                receipt = general_liquidity.models.receipt.Receipt(
+                    intent_key = '', 
+                    rail = 'x402', 
+                    reference = '', 
+                    terms = general_liquidity.models.terms.Terms(
+                        reversibility = 'reversible', 
+                        finality = 'instant', 
+                        credential = '', 
+                        rail = 'x402', 
+                        capital_source = 'payer', 
+                        presence = 'present', ), 
+                    settled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
+                    enforcement = '', ),
+                placed_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
         )
         """
 

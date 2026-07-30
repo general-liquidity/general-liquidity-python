@@ -12,34 +12,30 @@
 """  # noqa: E501
 
 
-import unittest
-
-from general_liquidity.api.commerce_api import CommerceApi
-
-
-class TestCommerceApi(unittest.TestCase):
-    """CommerceApi unit test stubs"""
-
-    def setUp(self) -> None:
-        self.api = CommerceApi()
-
-    def tearDown(self) -> None:
-        pass
-
-    def test_buy(self) -> None:
-        """Test case for buy
-
-        Drive a merchant checkout to a completed Order.
-        """
-        pass
-
-    def test_quote(self) -> None:
-        """Test case for quote
-
-        Price a cart against a merchant. Commits nothing.
-        """
-        pass
+from __future__ import annotations
+import json
+from enum import Enum
+from typing_extensions import Self
 
 
-if __name__ == '__main__':
-    unittest.main()
+class CartStatus(str, Enum):
+    """
+    The normalized checkout lifecycle. Only `ready` may be authorized; the rest are the states a refusal reports. 
+    """
+
+    """
+    allowed enum values
+    """
+    PRICED = 'priced'
+    ESCALATION_REQUIRED = 'escalation_required'
+    READY = 'ready'
+    AUTHORIZED = 'authorized'
+    COMPLETED = 'completed'
+    CANCELED = 'canceled'
+
+    @classmethod
+    def from_json(cls, json_str: str) -> Self:
+        """Create an instance of CartStatus from a JSON string"""
+        return cls(json.loads(json_str))
+
+

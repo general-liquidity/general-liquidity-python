@@ -17,24 +17,19 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, ClassVar, Dict, List
-from general_liquidity.models.amount import Amount
-from general_liquidity.models.cart_status import CartStatus
+from typing_extensions import Annotated
 from typing import Optional, Set
 from typing_extensions import Self
 
-class Cart(BaseModel):
+class CommerceLine(BaseModel):
     """
-    A server-authoritative priced checkout state, as `quote` returns it.
+    One requested line — a quantity of one merchant item. Carries no price.
     """ # noqa: E501
-    id: StrictStr = Field(description="The merchant's cart id. What the authorize beat is keyed on.")
-    protocol: StrictStr = Field(description="The checkout protocol that priced it.")
-    status: CartStatus
-    currency: StrictStr
-    total: Amount
-    merchant: StrictStr
-    __properties: ClassVar[List[str]] = ["id", "protocol", "status", "currency", "total", "merchant"]
+    id: Annotated[str, Field(min_length=1, strict=True)] = Field(description="The merchant's own item identifier.")
+    quantity: Annotated[int, Field(strict=True, ge=1)] = Field(description="A positive integer count. Zero and fractional quantities are refused.")
+    __properties: ClassVar[List[str]] = ["id", "quantity"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -54,7 +49,7 @@ class Cart(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of Cart from a JSON string"""
+        """Create an instance of CommerceLine from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -75,14 +70,11 @@ class Cart(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
-        # override the default output from pydantic by calling `to_dict()` of total
-        if self.total:
-            _dict['total'] = self.total.to_dict()
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of Cart from a dict"""
+        """Create an instance of CommerceLine from a dict"""
         if obj is None:
             return None
 
@@ -91,11 +83,7 @@ class Cart(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
-            "protocol": obj.get("protocol"),
-            "status": obj.get("status"),
-            "currency": obj.get("currency"),
-            "total": Amount.from_dict(obj["total"]) if obj.get("total") is not None else None,
-            "merchant": obj.get("merchant")
+            "quantity": obj.get("quantity")
         })
         return _obj
 

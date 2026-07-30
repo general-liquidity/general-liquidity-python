@@ -1,15 +1,18 @@
 # Order
 
-The completed result of buy(). Beta.
+A completed purchase, as `buy` returns it. The merchant stays merchant-of-record; GL supplied the gated settlement and the receipt that proves it. 
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **id** | **str** |  | 
-**status** | **str** |  | 
-**receipt** | [**Receipt**](Receipt.md) |  | [optional] 
-**cart** | [**Cart**](Cart.md) |  | [optional] 
+**cart_id** | **str** | The cart this order was placed from. | 
+**protocol** | **str** |  | 
+**status** | [**CartStatus**](CartStatus.md) |  | 
+**merchant** | **str** |  | 
+**receipt** | [**Receipt**](Receipt.md) | The settlement Receipt the gated &#x60;pay&#x60; produced for the authorize beat. | 
+**placed_at** | **datetime** |  | 
 
 ## Example
 

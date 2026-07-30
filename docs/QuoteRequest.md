@@ -1,12 +1,15 @@
 # QuoteRequest
 
+Enough to discover the merchant and price a cart. Every field here is read by the server; nothing else in the body is. 
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**what** | **str** | Merchant reference / product query. | 
-**constraints** | **Dict[str, object]** |  | [optional] 
+**rail** | **str** | The checkout protocol to dispatch to. Validated against this closed set at the boundary — a &#x60;RailId&#x60; that is not a checkout protocol is refused here, not routed.  | 
+**merchant** | **str** | The merchant reference the checkout protocol resolves. | 
+**currency** | **str** | The currency the cart is to be priced in. | 
+**lines** | [**List[CommerceLine]**](CommerceLine.md) | What to price. Must be non-empty. | 
 
 ## Example
 

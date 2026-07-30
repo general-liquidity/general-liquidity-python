@@ -1,15 +1,17 @@
 # Cart
 
-A server-authoritative priced checkout state. Beta.
+A server-authoritative priced checkout state, as `quote` returns it.
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**id** | **str** |  | 
+**id** | **str** | The merchant&#39;s cart id. What the authorize beat is keyed on. | 
+**protocol** | **str** | The checkout protocol that priced it. | 
+**status** | [**CartStatus**](CartStatus.md) |  | 
+**currency** | **str** |  | 
 **total** | [**Amount**](Amount.md) |  | 
-**line_items** | **List[object]** |  | [optional] 
-**expires_at** | **datetime** |  | [optional] 
+**merchant** | **str** |  | 
 
 ## Example
 

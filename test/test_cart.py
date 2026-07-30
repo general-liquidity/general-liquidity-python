@@ -36,20 +36,24 @@ class TestCart(unittest.TestCase):
         if include_optional:
             return Cart(
                 id = '',
+                protocol = '',
+                status = 'priced',
+                currency = '',
                 total = general_liquidity.models.amount.Amount(
                     value = '', 
                     asset = '', ),
-                line_items = [
-                    None
-                    ],
-                expires_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f')
+                merchant = ''
             )
         else:
             return Cart(
                 id = '',
+                protocol = '',
+                status = 'priced',
+                currency = '',
                 total = general_liquidity.models.amount.Amount(
                     value = '', 
                     asset = '', ),
+                merchant = '',
         )
         """
 

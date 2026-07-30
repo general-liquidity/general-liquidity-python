@@ -34,7 +34,15 @@ tags:
   - name: money
     description: Submit a signed Intent to the sovereign gate for settlement.
   - name: commerce
-    description: Merchant checkout over ACP / UCP. Beta.
+    description: |
+      The commerce capability group: `quote` prices a cart against a merchant, `buy` drives the
+      checkout to a completed `Order` over ACP or UCP. OPT-IN and DEFAULT-OFF — the routes are
+      served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`),
+      and a deployment that did not answers 404 on both. That is a deployment decision, not a
+      degraded mode: publishing them opens an outbound HTTP path to arbitrary merchants, and
+      commerce otherwise stays what it has been, an embedded call on the gateway. Where they ARE
+      served, `buy` authorizes through the same gate `/pay` uses; the settle primitive is not
+      reachable from this group by any other path.
   - name: governance
     description: |
       Read the signed, hash-linked audit trail — the `/audit` list + stream, the async job
@@ -660,66 +668,120 @@ paths:
     post:
       operationId: buy
       tags: [commerce]
-      summary: Drive a merchant checkout to a completed Order. (Beta)
-      x-beta: true
+      summary: Drive a merchant checkout to a completed Order.
       description: |
-        Beta. Drive a merchant checkout (ACP · UCP) to a completed `Order`; calls `pay`
-        for the authorize/settle beats. Documented but not yet stable.
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
+        Drive a merchant checkout to `ready`, authorize it through the SAME gate `/pay` uses,
+        and return the completed `Order` carrying the settlement `Receipt`. The merchant stays
+        merchant-of-record. The PRICE is never taken from the caller: it comes from the
+        server-authoritative `Cart` the merchant priced, so this body carries lines, not
+        amounts. The caller holds no settle primitive here either — the engine behind this
+        route is built over the gateway's own gated `pay` and cannot reach a rail any other way.
+
+        OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier
+        (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on
+        this path exactly as if it never existed.
+
+        Because it settles, it is under the same fail-closed rule as `/pay`: where the route
+        exists and no authentication is configured, it refuses rather than settling. Replay is
+        server-side and keyed on the body's `idempotencyKey`, namespaced separately from
+        `/pay`'s. A `503 rail.unavailable` is retryable by construction and is the one outcome
+        NOT stored, so the identical request may be re-sent under the same key.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Intent"
+              $ref: "#/components/schemas/BuyRequest"
       responses:
         "200":
-          description: The completed order.
+          description: The completed order, carrying the settlement Receipt.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
-        "400": { $ref: "#/components/responses/Problem" }
+        "400":
+          description: |
+            `never-retry`. The body failed the boundary check (`intent.malformed`: the quote
+            fields above, plus an absent `idempotencyKey`, `purpose`, `terms`,
+            `envelope.signature` or `envelope.mandateId`), the bytes were not JSON
+            (`intent.unparseable`), or the checkout could not be driven to a state that can be
+            authorized (`intent.malformed`, with `reasons` carrying the cart `status`, any
+            `continueUrl` and the merchant's messages).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "401": { $ref: "#/components/responses/Problem" }
-        "403": { $ref: "#/components/responses/Problem" }
-        "409": { $ref: "#/components/responses/Problem" }
+        "403":
+          description: |
+            `escalate-to-human`. The gate refused the authorize beat (`intent.denied`),
+            byte-identical to what `/pay` returns for the same decision. A gate `confirm`
+            lands here too: a merchant session cannot be held open across an out-of-band
+            operator approval, so there is no parked intent for `/operator/approve` to
+            release. The other source is a merchant refusal the checkout protocol itself
+            classified `escalate-to-human`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        "500": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
 
   /quote:
     post:
       operationId: quote
       tags: [commerce]
-      summary: Get a server-authoritative priced cart before buy. (Beta)
-      x-beta: true
+      summary: Price a cart against a merchant. Commits nothing.
       description: |
-        Beta. Get a server-authoritative priced `Cart` (tax, inventory, fulfillment
-        computed by the merchant) before committing to `buy`.
+        Get a server-authoritative priced `Cart` — the merchant computes tax, inventory and
+        fulfillment — before committing to `buy`. Moves no money and holds no value, so it is
+        an ordinary agent read on the bearer credential.
+
+        OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier
+        (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on
+        this path exactly as if it never existed. Enabling it is a deployment decision because
+        it opens an outbound HTTP path to arbitrary merchants.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [what]
-              properties:
-                what:
-                  type: string
-                  description: Merchant reference / product query.
-                constraints:
-                  type: object
-                  additionalProperties: true
+              $ref: "#/components/schemas/QuoteRequest"
       responses:
         "200":
-          description: A server-authoritative priced cart.
+          description: The server-authoritative priced cart.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cart"
-        "400": { $ref: "#/components/responses/Problem" }
+        "400":
+          description: |
+            `never-retry`. The body failed the boundary check (`intent.malformed`: unknown
+            `rail`, absent `merchant` / `currency`, empty `lines`, a line without a non-empty
+            `id` or a positive integer `quantity`), the bytes were not JSON
+            (`intent.unparseable`), or the merchant could not be driven to a priceable state
+            (`intent.malformed`, with `reasons` carrying the cart `status`, any `continueUrl`
+            and the merchant's own messages). A cart stopped at `escalation_required` needs a
+            human at that URL; an identical retry cannot terminate.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "401": { $ref: "#/components/responses/Problem" }
+        "403":
+          description: |
+            `escalate-to-human`. The checkout protocol classified its own refusal
+            `escalate-to-human` (`intent.denied`). Rebuilding the request does not change the
+            merchant's decision.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
 
   /operator/approve:
     post:
@@ -1607,38 +1669,140 @@ components:
         mandate: { $ref: "#/components/schemas/MemoryMandate" }
         rootId: { type: string }
 
-    Order:
+    CommerceLine:
       type: object
       additionalProperties: false
-      description: The completed result of buy(). Beta.
-      required: [id, status]
+      description: One requested line — a quantity of one merchant item. Carries no price.
+      required: [id, quantity]
       properties:
         id:
           type: string
-        status:
+          minLength: 1
+          description: The merchant's own item identifier.
+        quantity:
+          type: integer
+          minimum: 1
+          description: A positive integer count. Zero and fractional quantities are refused.
+
+    QuoteRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Enough to discover the merchant and price a cart. Every field here is read by the
+        server; nothing else in the body is.
+      required: [rail, merchant, currency, lines]
+      properties:
+        rail:
           type: string
-          enum: [pending, authorized, completed, cancelled]
-        receipt:
-          $ref: "#/components/schemas/Receipt"
-        cart:
-          $ref: "#/components/schemas/Cart"
+          enum: [acp, ucp]
+          description: |
+            The checkout protocol to dispatch to. Validated against this closed set at the
+            boundary — a `RailId` that is not a checkout protocol is refused here, not routed.
+        merchant:
+          type: string
+          minLength: 1
+          description: The merchant reference the checkout protocol resolves.
+        currency:
+          type: string
+          minLength: 1
+          description: The currency the cart is to be priced in.
+        lines:
+          type: array
+          minItems: 1
+          description: What to price. Must be non-empty.
+          items:
+            $ref: "#/components/schemas/CommerceLine"
+
+    BuyRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        The quote fields plus the mandate-bearing envelope and terms the authorize beat needs —
+        the same envelope `/pay` carries, because the same gate evaluates it. No amount appears:
+        the price is the merchant's, taken from the server-authoritative cart.
+      required: [idempotencyKey, rail, merchant, currency, lines, purpose, terms, envelope]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          description: |
+            Client-generated, server-enforced replay key, carried in the BODY (not the header)
+            and namespaced apart from `/pay`'s. Stripped before the request reaches the checkout
+            engine: the intent the gate evaluates is keyed on the merchant's own cart id.
+        rail:
+          type: string
+          enum: [acp, ucp]
+          description: The checkout protocol to dispatch to.
+        merchant:
+          type: string
+          minLength: 1
+        currency:
+          type: string
+          minLength: 1
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CommerceLine"
+        purpose:
+          type: string
+          description: What the purchase is for. Evaluated by the gate, as on `/pay`.
+        terms:
+          $ref: "#/components/schemas/Terms"
+        envelope:
+          $ref: "#/components/schemas/Envelope"
+
+    CartStatus:
+      type: string
+      description: |
+        The normalized checkout lifecycle. Only `ready` may be authorized; the rest are the
+        states a refusal reports.
+      enum: [priced, escalation_required, ready, authorized, completed, canceled]
 
     Cart:
       type: object
       additionalProperties: false
-      description: A server-authoritative priced checkout state. Beta.
-      required: [id, total]
+      description: A server-authoritative priced checkout state, as `quote` returns it.
+      required: [id, protocol, status, currency, total, merchant]
       properties:
         id:
           type: string
+          description: The merchant's cart id. What the authorize beat is keyed on.
+        protocol:
+          type: string
+          description: The checkout protocol that priced it.
+        status:
+          $ref: "#/components/schemas/CartStatus"
+        currency:
+          type: string
         total:
           $ref: "#/components/schemas/Amount"
-        lineItems:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        expiresAt:
+        merchant:
+          type: string
+
+    Order:
+      type: object
+      additionalProperties: false
+      description: |
+        A completed purchase, as `buy` returns it. The merchant stays merchant-of-record; GL
+        supplied the gated settlement and the receipt that proves it.
+      required: [id, cartId, protocol, status, merchant, receipt, placedAt]
+      properties:
+        id:
+          type: string
+        cartId:
+          type: string
+          description: The cart this order was placed from.
+        protocol:
+          type: string
+        status:
+          $ref: "#/components/schemas/CartStatus"
+        merchant:
+          type: string
+        receipt:
+          $ref: "#/components/schemas/Receipt"
+          description: The settlement Receipt the gated `pay` produced for the authorize beat.
+        placedAt:
           type: string
           format: date-time
 

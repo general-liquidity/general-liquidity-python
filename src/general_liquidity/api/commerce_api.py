@@ -16,10 +16,8 @@ from pydantic import validate_call, Field, StrictFloat, StrictStr, StrictInt
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Annotated
 
-from pydantic import Field
-from typing_extensions import Annotated
+from general_liquidity.models.buy_request import BuyRequest
 from general_liquidity.models.cart import Cart
-from general_liquidity.models.intent import Intent
 from general_liquidity.models.order import Order
 from general_liquidity.models.quote_request import QuoteRequest
 
@@ -44,8 +42,7 @@ class CommerceApi:
     @validate_call
     def buy(
         self,
-        idempotency_key: Annotated[str, Field(min_length=1, strict=True, description="Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience. ")],
-        intent: Intent,
+        buy_request: BuyRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -59,14 +56,12 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> Order:
-        """Drive a merchant checkout to a completed Order. (Beta)
+        """Drive a merchant checkout to a completed Order.
 
-        Beta. Drive a merchant checkout (ACP · UCP) to a completed `Order`; calls `pay` for the authorize/settle beats. Documented but not yet stable. 
+        Drive a merchant checkout to `ready`, authorize it through the SAME gate `/pay` uses, and return the completed `Order` carrying the settlement `Receipt`. The merchant stays merchant-of-record. The PRICE is never taken from the caller: it comes from the server-authoritative `Cart` the merchant priced, so this body carries lines, not amounts. The caller holds no settle primitive here either — the engine behind this route is built over the gateway's own gated `pay` and cannot reach a rail any other way.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed.  Because it settles, it is under the same fail-closed rule as `/pay`: where the route exists and no authentication is configured, it refuses rather than settling. Replay is server-side and keyed on the body's `idempotencyKey`, namespaced separately from `/pay`'s. A `503 rail.unavailable` is retryable by construction and is the one outcome NOT stored, so the identical request may be re-sent under the same key. 
 
-        :param idempotency_key: Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience.  (required)
-        :type idempotency_key: str
-        :param intent: (required)
-        :type intent: Intent
+        :param buy_request: (required)
+        :type buy_request: BuyRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -90,8 +85,7 @@ class CommerceApi:
         """ # noqa: E501
 
         _param = self._buy_serialize(
-            idempotency_key=idempotency_key,
-            intent=intent,
+            buy_request=buy_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -103,8 +97,10 @@ class CommerceApi:
             '400': "Problem",
             '401': "Problem",
             '403': "Problem",
-            '409': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '500': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -120,8 +116,7 @@ class CommerceApi:
     @validate_call
     def buy_with_http_info(
         self,
-        idempotency_key: Annotated[str, Field(min_length=1, strict=True, description="Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience. ")],
-        intent: Intent,
+        buy_request: BuyRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -135,14 +130,12 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[Order]:
-        """Drive a merchant checkout to a completed Order. (Beta)
+        """Drive a merchant checkout to a completed Order.
 
-        Beta. Drive a merchant checkout (ACP · UCP) to a completed `Order`; calls `pay` for the authorize/settle beats. Documented but not yet stable. 
+        Drive a merchant checkout to `ready`, authorize it through the SAME gate `/pay` uses, and return the completed `Order` carrying the settlement `Receipt`. The merchant stays merchant-of-record. The PRICE is never taken from the caller: it comes from the server-authoritative `Cart` the merchant priced, so this body carries lines, not amounts. The caller holds no settle primitive here either — the engine behind this route is built over the gateway's own gated `pay` and cannot reach a rail any other way.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed.  Because it settles, it is under the same fail-closed rule as `/pay`: where the route exists and no authentication is configured, it refuses rather than settling. Replay is server-side and keyed on the body's `idempotencyKey`, namespaced separately from `/pay`'s. A `503 rail.unavailable` is retryable by construction and is the one outcome NOT stored, so the identical request may be re-sent under the same key. 
 
-        :param idempotency_key: Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience.  (required)
-        :type idempotency_key: str
-        :param intent: (required)
-        :type intent: Intent
+        :param buy_request: (required)
+        :type buy_request: BuyRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -166,8 +159,7 @@ class CommerceApi:
         """ # noqa: E501
 
         _param = self._buy_serialize(
-            idempotency_key=idempotency_key,
-            intent=intent,
+            buy_request=buy_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -179,8 +171,10 @@ class CommerceApi:
             '400': "Problem",
             '401': "Problem",
             '403': "Problem",
-            '409': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '500': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -196,8 +190,7 @@ class CommerceApi:
     @validate_call
     def buy_without_preload_content(
         self,
-        idempotency_key: Annotated[str, Field(min_length=1, strict=True, description="Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience. ")],
-        intent: Intent,
+        buy_request: BuyRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -211,14 +204,12 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Drive a merchant checkout to a completed Order. (Beta)
+        """Drive a merchant checkout to a completed Order.
 
-        Beta. Drive a merchant checkout (ACP · UCP) to a completed `Order`; calls `pay` for the authorize/settle beats. Documented but not yet stable. 
+        Drive a merchant checkout to `ready`, authorize it through the SAME gate `/pay` uses, and return the completed `Order` carrying the settlement `Receipt`. The merchant stays merchant-of-record. The PRICE is never taken from the caller: it comes from the server-authoritative `Cart` the merchant priced, so this body carries lines, not amounts. The caller holds no settle primitive here either — the engine behind this route is built over the gateway's own gated `pay` and cannot reach a rail any other way.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed.  Because it settles, it is under the same fail-closed rule as `/pay`: where the route exists and no authentication is configured, it refuses rather than settling. Replay is server-side and keyed on the body's `idempotencyKey`, namespaced separately from `/pay`'s. A `503 rail.unavailable` is retryable by construction and is the one outcome NOT stored, so the identical request may be re-sent under the same key. 
 
-        :param idempotency_key: Client-generated, server-enforced idempotency key. Required on all mutating operations (`pay`, `buy`) — on a payment path this is a correctness guarantee against double-spend, not a convenience.  (required)
-        :type idempotency_key: str
-        :param intent: (required)
-        :type intent: Intent
+        :param buy_request: (required)
+        :type buy_request: BuyRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -242,8 +233,7 @@ class CommerceApi:
         """ # noqa: E501
 
         _param = self._buy_serialize(
-            idempotency_key=idempotency_key,
-            intent=intent,
+            buy_request=buy_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -255,8 +245,10 @@ class CommerceApi:
             '400': "Problem",
             '401': "Problem",
             '403': "Problem",
-            '409': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '500': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -267,8 +259,7 @@ class CommerceApi:
 
     def _buy_serialize(
         self,
-        idempotency_key,
-        intent,
+        buy_request,
         _request_auth,
         _content_type,
         _headers,
@@ -292,12 +283,10 @@ class CommerceApi:
         # process the path parameters
         # process the query parameters
         # process the header parameters
-        if idempotency_key is not None:
-            _header_params['Idempotency-Key'] = idempotency_key
         # process the form parameters
         # process the body parameter
-        if intent is not None:
-            _body_params = intent
+        if buy_request is not None:
+            _body_params = buy_request
 
 
         # set the HTTP header `Accept`
@@ -363,9 +352,9 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> Cart:
-        """Get a server-authoritative priced cart before buy. (Beta)
+        """Price a cart against a merchant. Commits nothing.
 
-        Beta. Get a server-authoritative priced `Cart` (tax, inventory, fulfillment computed by the merchant) before committing to `buy`. 
+        Get a server-authoritative priced `Cart` — the merchant computes tax, inventory and fulfillment — before committing to `buy`. Moves no money and holds no value, so it is an ordinary agent read on the bearer credential.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed. Enabling it is a deployment decision because it opens an outbound HTTP path to arbitrary merchants. 
 
         :param quote_request: (required)
         :type quote_request: QuoteRequest
@@ -403,7 +392,10 @@ class CommerceApi:
             '200': "Cart",
             '400': "Problem",
             '401': "Problem",
+            '403': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -433,9 +425,9 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[Cart]:
-        """Get a server-authoritative priced cart before buy. (Beta)
+        """Price a cart against a merchant. Commits nothing.
 
-        Beta. Get a server-authoritative priced `Cart` (tax, inventory, fulfillment computed by the merchant) before committing to `buy`. 
+        Get a server-authoritative priced `Cart` — the merchant computes tax, inventory and fulfillment — before committing to `buy`. Moves no money and holds no value, so it is an ordinary agent read on the bearer credential.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed. Enabling it is a deployment decision because it opens an outbound HTTP path to arbitrary merchants. 
 
         :param quote_request: (required)
         :type quote_request: QuoteRequest
@@ -473,7 +465,10 @@ class CommerceApi:
             '200': "Cart",
             '400': "Problem",
             '401': "Problem",
+            '403': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -503,9 +498,9 @@ class CommerceApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Get a server-authoritative priced cart before buy. (Beta)
+        """Price a cart against a merchant. Commits nothing.
 
-        Beta. Get a server-authoritative priced `Cart` (tax, inventory, fulfillment computed by the merchant) before committing to `buy`. 
+        Get a server-authoritative priced `Cart` — the merchant computes tax, inventory and fulfillment — before committing to `buy`. Moves no money and holds no value, so it is an ordinary agent read on the bearer credential.  OPT-IN, DEFAULT-OFF. Served only where the deployment enabled the commerce tier (`StackConfig.commerce: true`); a deployment that did not answers `404 not_found` on this path exactly as if it never existed. Enabling it is a deployment decision because it opens an outbound HTTP path to arbitrary merchants. 
 
         :param quote_request: (required)
         :type quote_request: QuoteRequest
@@ -543,7 +538,10 @@ class CommerceApi:
             '200': "Cart",
             '400': "Problem",
             '401': "Problem",
+            '403': "Problem",
+            '404': "Problem",
             '429': "Problem",
+            '503': "Problem",
         }
         response_data = self.api_client.call_api(
             *_param,

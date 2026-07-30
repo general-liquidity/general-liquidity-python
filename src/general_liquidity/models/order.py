@@ -17,29 +17,26 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, StrictStr, field_validator
-from typing import Any, ClassVar, Dict, List, Optional
-from general_liquidity.models.cart import Cart
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from typing import Any, ClassVar, Dict, List
+from general_liquidity.models.cart_status import CartStatus
 from general_liquidity.models.receipt import Receipt
 from typing import Optional, Set
 from typing_extensions import Self
 
 class Order(BaseModel):
     """
-    The completed result of buy(). Beta.
+    A completed purchase, as `buy` returns it. The merchant stays merchant-of-record; GL supplied the gated settlement and the receipt that proves it. 
     """ # noqa: E501
     id: StrictStr
-    status: StrictStr
-    receipt: Optional[Receipt] = None
-    cart: Optional[Cart] = None
-    __properties: ClassVar[List[str]] = ["id", "status", "receipt", "cart"]
-
-    @field_validator('status')
-    def status_validate_enum(cls, value):
-        """Validates the enum"""
-        if value not in set(['pending', 'authorized', 'completed', 'cancelled']):
-            raise ValueError("must be one of enum values ('pending', 'authorized', 'completed', 'cancelled')")
-        return value
+    cart_id: StrictStr = Field(description="The cart this order was placed from.", alias="cartId")
+    protocol: StrictStr
+    status: CartStatus
+    merchant: StrictStr
+    receipt: Receipt = Field(description="The settlement Receipt the gated `pay` produced for the authorize beat.")
+    placed_at: datetime = Field(alias="placedAt")
+    __properties: ClassVar[List[str]] = ["id", "cartId", "protocol", "status", "merchant", "receipt", "placedAt"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -83,9 +80,6 @@ class Order(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of receipt
         if self.receipt:
             _dict['receipt'] = self.receipt.to_dict()
-        # override the default output from pydantic by calling `to_dict()` of cart
-        if self.cart:
-            _dict['cart'] = self.cart.to_dict()
         return _dict
 
     @classmethod
@@ -99,9 +93,12 @@ class Order(BaseModel):
 
         _obj = cls.model_validate({
             "id": obj.get("id"),
+            "cartId": obj.get("cartId"),
+            "protocol": obj.get("protocol"),
             "status": obj.get("status"),
+            "merchant": obj.get("merchant"),
             "receipt": Receipt.from_dict(obj["receipt"]) if obj.get("receipt") is not None else None,
-            "cart": Cart.from_dict(obj["cart"]) if obj.get("cart") is not None else None
+            "placedAt": obj.get("placedAt")
         })
         return _obj
 

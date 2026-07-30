@@ -14,10 +14,10 @@
 
 import unittest
 
-from general_liquidity.models.quote_request import QuoteRequest
+from general_liquidity.models.commerce_line import CommerceLine
 
-class TestQuoteRequest(unittest.TestCase):
-    """QuoteRequest unit test stubs"""
+class TestCommerceLine(unittest.TestCase):
+    """CommerceLine unit test stubs"""
 
     def setUp(self):
         pass
@@ -25,40 +25,28 @@ class TestQuoteRequest(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> QuoteRequest:
-        """Test QuoteRequest
+    def make_instance(self, include_optional) -> CommerceLine:
+        """Test CommerceLine
             include_optional is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `QuoteRequest`
+        # uncomment below to create an instance of `CommerceLine`
         """
-        model = QuoteRequest()
+        model = CommerceLine()
         if include_optional:
-            return QuoteRequest(
-                rail = 'acp',
-                merchant = '0',
-                currency = '0',
-                lines = [
-                    general_liquidity.models.commerce_line.CommerceLine(
-                        id = '0', 
-                        quantity = 1, )
-                    ]
+            return CommerceLine(
+                id = '0',
+                quantity = 1
             )
         else:
-            return QuoteRequest(
-                rail = 'acp',
-                merchant = '0',
-                currency = '0',
-                lines = [
-                    general_liquidity.models.commerce_line.CommerceLine(
-                        id = '0', 
-                        quantity = 1, )
-                    ],
+            return CommerceLine(
+                id = '0',
+                quantity = 1,
         )
         """
 
-    def testQuoteRequest(self):
-        """Test QuoteRequest"""
+    def testCommerceLine(self):
+        """Test CommerceLine"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

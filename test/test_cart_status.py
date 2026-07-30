@@ -14,32 +14,20 @@
 
 import unittest
 
-from general_liquidity.api.commerce_api import CommerceApi
+from general_liquidity.models.cart_status import CartStatus
 
+class TestCartStatus(unittest.TestCase):
+    """CartStatus unit test stubs"""
 
-class TestCommerceApi(unittest.TestCase):
-    """CommerceApi unit test stubs"""
-
-    def setUp(self) -> None:
-        self.api = CommerceApi()
-
-    def tearDown(self) -> None:
+    def setUp(self):
         pass
 
-    def test_buy(self) -> None:
-        """Test case for buy
-
-        Drive a merchant checkout to a completed Order.
-        """
+    def tearDown(self):
         pass
 
-    def test_quote(self) -> None:
-        """Test case for quote
-
-        Price a cart against a merchant. Commits nothing.
-        """
-        pass
-
+    def testCartStatus(self):
+        """Test CartStatus"""
+        # inst = CartStatus()
 
 if __name__ == '__main__':
     unittest.main()
