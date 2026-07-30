@@ -41,7 +41,12 @@ jobs:
           python-version: '3.12'
 
       - name: Install
-        run: pip install -e .
+        # pytest is not a dependency of the package, so `pip install -e .` alone
+        # leaves the next step with no runner. This job has been red on that since
+        # it was added, while ci.yml stayed green because it never runs the tests.
+        run: |
+          pip install -e .
+          pip install pytest
 
       - name: Test
         run: pytest
