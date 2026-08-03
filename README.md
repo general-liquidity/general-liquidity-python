@@ -51,6 +51,27 @@ with ApiClient(config) as api_client:
 
 Model names (`Intent`, `Receipt`, `Mandate`, `Order`, `QuoteRequest`, `Counterparty`, ...) live under `general_liquidity.models`. See the generated `docs/` directory for the full method and model reference.
 
+## API groups
+
+The client is generated from the spec, so it covers every route in seven groups. Each is its own API class.
+
+| Group | What |
+|---|---|
+| `identity` | `resolve`, `verify`, `disclose` |
+| `money` | `pay` — submit a signed Intent; the gate decides before anything settles |
+| `commerce` | `quote`, `buy` — opt-in per deployment; a stack without the tier answers `404` |
+| `governance` | `audit`, `auditStream`, `getIntent`, `getIntentEvents`, `getUsage` |
+| `memory` | `remember`, `recall`, `assemble`, `verify`, `forget` |
+| `operator` | `approve`, `refund`, `killSwitch`, `resetCircuitBreaker` — a separate credential |
+| `webhooks` | endpoint CRUD — operator authority |
+
+The gate's verdict on `pay` is `allow`, `confirm` or `deny`, deny-first. A `confirm` is not a
+receipt: it parks the intent for an operator to release. Branch on the RFC 9457 problem code,
+not on prose.
+
+Commerce takes lines rather than an amount. The price comes from the server-authoritative cart
+the merchant priced, and only a cart in status `ready` can be bought.
+
 ## Signing
 
 This generated client covers transport and models only. Intent envelope signing is client-side and is not included here. You are responsible for constructing and signing the `Intent` before passing it to `pay` or `buy`. Only the hand-written TypeScript SDK carries the built-in operator signer today.
